@@ -7,6 +7,10 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false   # do NOT cancel previous runs
+
 jobs:
   build:
     name: Build & Package TIPA
