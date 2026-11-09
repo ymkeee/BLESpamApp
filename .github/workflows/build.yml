@@ -1,91 +1,99 @@
-name: Build BLESpam IPA (TrollStore)
+name: Build BLESpam TIPA (TrollStore)
 
 on:
   push:
     branches: [main, master]
   pull_request:
     branches: [main, master]
-  workflow_dispatch:   # allow manual trigger from Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build & Package IPA
-    runs-on: macos-latest   # Xcode 15+ comes pre-installed
+    name: Build & Package TIPA
+    runs-on: macos-14   # Sonoma — Xcode 15.x guaranteed
 
     steps:
-      # ── 1. Checkout ──────────────────────────────────────────────────────────
-      - name: Checkout repository
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Select Xcode version ──────────────────────────────────────────────
-      - name: Select Xcode 15
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+      # ── 2. Select latest available Xcode ───────────────────────────────────
+      - name: Select Xcode
+        run: |
+          echo "=== Available Xcode installations ==="
+          ls /Applications/ | grep -i xcode || true
+          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Selecting: $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
 
-      # ── 3. Install ldid (for pseudo-signing) ────────────────────────────────
-      #    ldid is the standard tool used by jailbreak toolchains to inject
-      #    entitlements into Mach-O binaries without a real Apple certificate.
+      # ── 3. Install ldid ────────────────────────────────────────────────────
       - name: Install ldid
         run: |
           brew install ldid
-          ldid -v
+          ldid -v || true
 
-      # ── 4. Build (no code signing — we sign with ldid in step 6) ────────────
+      # ── 4. List available schemes (debug) ──────────────────────────────────
+      - name: List schemes
+        run: |
+          xcodebuild -project BLESpamApp.xcodeproj -list 2>&1 || true
+
+      # ── 5. Build ───────────────────────────────────────────────────────────
       - name: Build with xcodebuild
         run: |
           xcodebuild \
             -project BLESpamApp.xcodeproj \
-            -scheme BLESpamApp \
+            -target BLESpamApp \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
+            PROVISIONING_PROFILE="" \
             ARCHS="arm64 arm64e" \
             ONLY_ACTIVE_ARCH=NO \
             BUILD_DIR="$PWD/build" \
-            clean build
+            build 2>&1
 
-      # ── 5. Locate the built .app ─────────────────────────────────────────────
+      # ── 6. Locate .app ─────────────────────────────────────────────────────
       - name: Locate .app bundle
         id: locate
         run: |
+          echo "=== Build output ==="
+          find build -name "*.app" -type d 2>/dev/null || true
           APP_PATH=$(find build -name "BLESpamApp.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: BLESpamApp.app not found"
+            find build -type f | head -20
+            exit 1
+          fi
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_OUTPUT"
           echo "Found: $APP_PATH"
 
-      # ── 6. Pseudo-sign binary with ldid + entitlements ───────────────────────
+      # ── 7. Pseudo-sign with ldid ───────────────────────────────────────────
       - name: Pseudo-sign with ldid
         run: |
           APP="${{ steps.locate.outputs.APP_PATH }}"
           BINARY="$APP/BLESpamApp"
-
           echo "Signing: $BINARY"
           ldid -S"BLESpamApp/Resources/entitlements.plist" "$BINARY"
-          echo "Signing complete"
+          echo "Entitlements embedded:"
+          ldid -e "$BINARY" | head -30
 
-          # Verify entitlements were embedded
-          ldid -e "$BINARY" | head -40
-
-      # ── 7. Package as .tipa ──────────────────────────────────────────────────
-      #    .tipa = standard IPA zip renamed — TrollStore recognises both.
-      #    Structure:
-      #      Payload/
-      #        BLESpamApp.app/
+      # ── 8. Package .tipa ───────────────────────────────────────────────────
       - name: Package .tipa
         run: |
-          mkdir -p Payload
           APP="${{ steps.locate.outputs.APP_PATH }}"
+          mkdir -p Payload
           cp -r "$APP" Payload/BLESpamApp.app
-
-          # Zip into .ipa first, then copy as .tipa
           zip -r BLESpam.ipa Payload/
           cp BLESpam.ipa BLESpam.tipa
+          echo "=== Package sizes ==="
+          du -sh BLESpam.tipa BLESpam.ipa
 
-          echo "TIPA size: $(du -sh BLESpam.tipa | cut -f1)"
-
-      # ── 8. Upload .tipa as artifact ───────────────────────────────────────────
-      - name: Upload TIPA artifact
+      # ── 9. Upload artifacts ────────────────────────────────────────────────
+      - name: Upload TIPA
         uses: actions/upload-artifact@v4
         with:
           name: BLESpam-TrollStore
@@ -94,7 +102,7 @@ jobs:
             BLESpam.ipa
           retention-days: 30
 
-      # ── 9. Create GitHub Release on tag push ──────────────────────────────────
+      # ── 10. Create GitHub Release on tag push ──────────────────────────────
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -106,17 +114,16 @@ jobs:
           body: |
             ## BLESpam ${{ github.ref_name }}
 
-            TrollStore-compatible tweak package.
+            TrollStore-compatible package.
 
-            ### Install via TrollStore
+            ### Install
             1. Download `BLESpam.tipa`
-            2. Open **TrollStore** → **+** → select `BLESpam.tipa`
-            3. Tap **Install** → open **BLESpam** app
-            4. Select payloads → tap **START**
+            2. Open **TrollStore** → **+** → выбери файл
+            3. Tap **Install**
 
             ### Requirements
-            - iOS 15.0 – 16.x
-            - TrollStore 2.x installed
+            - iOS 15.0–16.x  
+            - TrollStore 2.x  
             - Bluetooth enabled
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
