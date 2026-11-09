@@ -232,7 +232,7 @@ static void advertise(CBPeripheralManager *p, NSData *d) {
 // ── AppDelegate + main ────────────────────────────────────────────────────────
 
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
-@property UIWindow *window;
+@property (nonatomic, strong) UIWindow *window;
 @end
 
 @implementation AppDelegate

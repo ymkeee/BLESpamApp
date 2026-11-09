@@ -14,8 +14,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install clang + zip + curl
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq clang zip curl
+      - name: Install clang + lld + zip + curl
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang lld zip curl git
 
       - name: Install ldid (pre-built)
         run: |
@@ -42,6 +44,7 @@ jobs:
             -target arm64-apple-ios15.0 \
             -isysroot /opt/sdks/iPhoneOS16.5.sdk \
             -fobjc-arc \
+            -fuse-ld=lld \
             -framework UIKit \
             -framework CoreBluetooth \
             -framework CoreFoundation \
@@ -54,6 +57,7 @@ jobs:
             -target arm64e-apple-ios15.0 \
             -isysroot /opt/sdks/iPhoneOS16.5.sdk \
             -fobjc-arc \
+            -fuse-ld=lld \
             -framework UIKit \
             -framework CoreBluetooth \
             -framework CoreFoundation \
