@@ -56,41 +56,7 @@ jobs:
         run: |
           mkdir -p /tmp/BLESpam.app
           cp /tmp/BLESpam /tmp/BLESpam.app/BLESpam
-          # Write Info.plist directly — no Xcode variables
-          cat > /tmp/BLESpam.app/Info.plist << 'PLISTEOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleExecutable</key>
-  <string>BLESpam</string>
-  <key>CFBundleIdentifier</key>
-  <string>com.example.blespam</string>
-  <key>CFBundleName</key>
-  <string>BLESpam</string>
-  <key>CFBundleDisplayName</key>
-  <string>BLESpam</string>
-  <key>CFBundleShortVersionString</key>
-  <string>1.0</string>
-  <key>CFBundleVersion</key>
-  <string>1</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>MinimumOSVersion</key>
-  <string>15.0</string>
-  <key>LSRequiresIPhoneOS</key>
-  <true/>
-  <key>NSBluetoothAlwaysUsageDescription</key>
-  <string>Used to broadcast BLE advertisement packets.</string>
-  <key>NSBluetoothPeripheralUsageDescription</key>
-  <string>Used for BLE peripheral mode.</string>
-  <key>UISupportedInterfaceOrientations</key>
-  <array>
-    <string>UIInterfaceOrientationPortrait</string>
-  </array>
-</dict>
-</plist>
-PLISTEOF
+          cp src/Info.plist /tmp/BLESpam.app/Info.plist
           echo "Bundle: $(ls -la /tmp/BLESpam.app/)"
 
       - name: Sign with ldid
