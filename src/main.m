@@ -1118,12 +1118,12 @@ static UIView *card(void) {
     bar.scrollEdgeAppearance = a;
 
     // ViewControllers
-    auto makeNav = ^UINavigationController *(UIViewController *vc, NSString *title, NSString *icon, NSString *selectedIcon) {
+    UINavigationController * (^makeNav)(UIViewController *, NSString *, NSString *, NSString *) =
+    ^UINavigationController *(UIViewController *vc, NSString *title, NSString *icon, NSString *selectedIcon) {
         UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
-        UIImage *img  = [UIImage systemImageNamed:icon];
-        UIImage *sel  = [UIImage systemImageNamed:selectedIcon ?: icon];
+        UIImage *img = [UIImage systemImageNamed:icon];
+        UIImage *sel = [UIImage systemImageNamed:selectedIcon ? selectedIcon : icon];
         nav.tabBarItem = [[UITabBarItem alloc] initWithTitle:title image:img selectedImage:sel];
-        // Nav bar appearance
         UINavigationBarAppearance *na = [[UINavigationBarAppearance alloc] init];
         [na configureWithOpaqueBackground];
         na.backgroundColor = CLR_BG;
