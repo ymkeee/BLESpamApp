@@ -1,0 +1,7 @@
+build/
+*.ipa
+Payload/
+*.xcuserstate
+*.xcworkspace/xcuserdata
+.DS_Store
+DerivedData/

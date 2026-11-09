@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <!--
+        ══════════════════════════════════════════════════════════
+        BLUETOOTH — private entitlements for arbitrary BLE advert
+        ══════════════════════════════════════════════════════════
+    -->
+
+    <!-- Grants access to com.apple.bluetooth.system XPC service -->
+    <key>com.apple.private.bluetooth</key>
+    <true/>
+
+    <!-- Allows use of CBPeripheralManager private advertising methods -->
+    <key>com.apple.bluetooth.le.advertise</key>
+    <true/>
+
+    <!-- Allows reading/setting local Bluetooth address via BluetoothManager -->
+    <key>com.apple.bluetooth.system</key>
+    <true/>
+
+    <!-- Companion device framework: needed to get bg advertising budget -->
+    <key>com.apple.developer.bluetooth</key>
+    <true/>
+
+    <!--
+        ══════════════════════════════════════════════════════════
+        TROLLSTORE / CODESIGN
+        ══════════════════════════════════════════════════════════
+    -->
+
+    <!-- Disables container sandbox — required by TrollStore for arbitrary entitlements -->
+    <key>com.apple.private.security.no-container</key>
+    <true/>
+
+    <!-- Allows the app to run without a provisioning profile check -->
+    <key>get-task-allow</key>
+    <true/>
+
+    <!-- Platform binary flag used by TrollStore to grant extra privileges -->
+    <key>platform-application</key>
+    <true/>
+
+    <!--
+        ══════════════════════════════════════════════════════════
+        STANDARD ENTITLEMENTS
+        ══════════════════════════════════════════════════════════
+    -->
+
+    <key>com.apple.developer.homekit</key>
+    <false/>
+
+    <key>aps-environment</key>
+    <string>production</string>
+
+</dict>
+</plist>
