@@ -1,6 +1,76 @@
-// Extensions.swift — SwiftUI helpers
+// Extensions.swift — SwiftUI native iOS 18 design tokens & helpers
 
 import SwiftUI
+import UIKit
+
+// MARK: - Native iOS Design Tokens
+
+enum AppTheme {
+    static let accent = Color(uiColor: .systemBlue)          // #0A84FF
+    static let destructive = Color(uiColor: .systemRed)      // #FF453A
+    static let success = Color(uiColor: .systemGreen)        // #30D158
+    static let warning = Color(uiColor: .systemOrange)       // #FF9F0A
+
+    static let background = Color(uiColor: .systemGroupedBackground)
+    static let secondaryBackground = Color(uiColor: .secondarySystemGroupedBackground)
+    static let tertiaryBackground = Color(uiColor: .tertiarySystemGroupedBackground)
+    static let separator = Color(uiColor: .separator)
+
+    /// Configures classic edge-to-edge blurred Tab Bar & Navigation Bar (pre-Liquid-Glass style)
+    static func configureSystemBars() {
+        let tabAppearance = UITabBarAppearance()
+        tabAppearance.configureWithDefaultBackground()
+        tabAppearance.backgroundEffect = UIBlurEffect(style: .systemChromeMaterialDark)
+        tabAppearance.backgroundColor = UIColor(red: 0.09, green: 0.09, blue: 0.10, alpha: 0.82)
+        tabAppearance.shadowColor = UIColor(white: 1.0, alpha: 0.14)
+
+        let normalAttrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 10, weight: .medium),
+            .foregroundColor: UIColor.systemGray
+        ]
+        let selectedAttrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 10, weight: .semibold),
+            .foregroundColor: UIColor.systemBlue
+        ]
+
+        let itemAppearances = [
+            tabAppearance.stackedLayoutAppearance,
+            tabAppearance.inlineLayoutAppearance,
+            tabAppearance.compactInlineLayoutAppearance
+        ]
+        for item in itemAppearances {
+            item.normal.iconColor = UIColor.systemGray
+            item.normal.titleTextAttributes = normalAttrs
+            item.selected.iconColor = UIColor.systemBlue
+            item.selected.titleTextAttributes = selectedAttrs
+        }
+
+        UITabBar.appearance().standardAppearance = tabAppearance
+        UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+        UITabBar.appearance().isTranslucent = true
+        UITabBar.appearance().tintColor = UIColor.systemBlue
+        UITabBar.appearance().unselectedItemTintColor = UIColor.systemGray
+
+        let navAppearance = UINavigationBarAppearance()
+        navAppearance.configureWithDefaultBackground()
+        navAppearance.backgroundEffect = UIBlurEffect(style: .systemChromeMaterialDark)
+        navAppearance.backgroundColor = UIColor(red: 0.08, green: 0.08, blue: 0.09, alpha: 0.80)
+        navAppearance.shadowColor = UIColor(white: 1.0, alpha: 0.12)
+        navAppearance.titleTextAttributes = [
+            .foregroundColor: UIColor.label,
+            .font: UIFont.systemFont(ofSize: 17, weight: .semibold)
+        ]
+        navAppearance.largeTitleTextAttributes = [
+            .foregroundColor: UIColor.label,
+            .font: UIFont.systemFont(ofSize: 28, weight: .bold)
+        ]
+
+        UINavigationBar.appearance().standardAppearance = navAppearance
+        UINavigationBar.appearance().compactAppearance = navAppearance
+        UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
+        UINavigationBar.appearance().tintColor = UIColor.systemBlue
+    }
+}
 
 // MARK: - Color from hex string
 
@@ -26,84 +96,71 @@ extension Color {
     }
 }
 
-// MARK: - PayloadColor → SwiftUI Gradient
+// MARK: - PayloadColor → Calm Native iOS System Tints
 
 extension PayloadColor {
+    var primary: Color {
+        switch self {
+        case .blue:   return Color(uiColor: .systemBlue)
+        case .purple: return Color(uiColor: .systemIndigo)
+        case .green:  return Color(uiColor: .systemGreen)
+        case .orange: return Color(uiColor: .systemOrange)
+        case .pink:   return Color(uiColor: .systemPink)
+        case .teal:   return Color(uiColor: .systemTeal)
+        }
+    }
+
     var linearGradient: LinearGradient {
         LinearGradient(
-            colors: gradient.map { Color(hex: $0) },
+            colors: [primary, primary],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
     }
-
-    var primary: Color { Color(hex: gradient[0]) }
 }
 
-// MARK: - Glassmorphism modifier
+// MARK: - Native Grouped Card Surface (preserved API)
 
 struct GlassCard: ViewModifier {
-    var cornerRadius: CGFloat = 20
+    var cornerRadius: CGFloat = 12
     func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                    )
+                    .fill(AppTheme.secondaryBackground)
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 
 extension View {
-    func glassCard(cornerRadius: CGFloat = 20) -> some View {
+    func glassCard(cornerRadius: CGFloat = 12) -> some View {
         modifier(GlassCard(cornerRadius: cornerRadius))
     }
 }
 
-// MARK: - Animated gradient text
+// MARK: - Clean Title Text (preserved API without neon gradient)
 
 struct GradientText: View {
     let text: String
     let colors: [Color]
-    var font: Font = .title.bold()
+    var font: Font = .headline
 
     var body: some View {
         Text(text)
             .font(font)
-            .overlay(
-                LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
-                    .mask(Text(text).font(font))
-            )
+            .foregroundStyle(.primary)
     }
 }
 
-// MARK: - Pulse animation modifier
+// MARK: - Subtle State Modifier (preserved API without radial glow)
 
 struct PulseEffect: ViewModifier {
-    @State private var pulse = false
     let active: Bool
     let color: Color
 
     func body(content: Content) -> some View {
         content
-            .background(
-                Circle()
-                    .fill(color.opacity(0.3))
-                    .scaleEffect(pulse ? 1.6 : 1.0)
-                    .opacity(pulse ? 0 : 0.6)
-                    .animation(
-                        active
-                            ? .easeInOut(duration: 0.9).repeatForever(autoreverses: false)
-                            : .default,
-                        value: pulse
-                    )
-            )
-            .onAppear { if active { pulse = true } }
-            .onChange(of: active) { newVal in pulse = newVal }
     }
 }
 

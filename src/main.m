@@ -18,17 +18,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 #define CLR_BG          [UIColor colorWithRed:0   green:0   blue:0   alpha:1]
-#define CLR_CARD        [UIColor colorWithRed:.11 green:.11 blue:.12 alpha:1]
-#define CLR_SEP         [UIColor colorWithWhite:1 alpha:.10]
+#define CLR_CARD        [UIColor colorWithRed:.11 green:.11 blue:.12 alpha:1]   // #1C1C1E
+#define CLR_FIELD       [UIColor colorWithRed:.17 green:.17 blue:.18 alpha:1]   // #2C2C2E
+#define CLR_SEP         [UIColor colorWithWhite:1 alpha:.12]
 #define CLR_ACCENT      [UIColor colorWithRed:.04 green:.52 blue:1   alpha:1]   // #0A84FF
 #define CLR_ORANGE      [UIColor colorWithRed:1   green:.62 blue:.04 alpha:1]   // #FF9F0A
-#define CLR_SUCCESS     [UIColor colorWithRed:.20 green:.78 blue:.35 alpha:1]
-#define CLR_DANGER      [UIColor colorWithRed:1   green:.27 blue:.23 alpha:1]
+#define CLR_SUCCESS     [UIColor colorWithRed:.19 green:.82 blue:.35 alpha:1]   // #30D158
+#define CLR_DANGER      [UIColor colorWithRed:1   green:.27 blue:.23 alpha:1]   // #FF453A
 #define CLR_FG          [UIColor whiteColor]
-#define CLR_FG2         [UIColor colorWithWhite:.6 alpha:1]
-#define CLR_FG3         [UIColor colorWithWhite:.35 alpha:1]
-#define CORNER_CARD     18.0
-#define CORNER_BTN      14.0
+#define CLR_FG2         [UIColor colorWithRed:.56 green:.56 blue:.58 alpha:1]   // #8E8E93
+#define CLR_FG3         [UIColor colorWithRed:.39 green:.39 blue:.40 alpha:1]   // #636366
+#define CORNER_CARD     12.0
+#define CORNER_BTN      10.0
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: - BLE Payload definitions
@@ -380,8 +381,57 @@ static BLESpamEngine *gEngine;
 @end
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MARK: - UI helpers
+// MARK: - UI helpers & mode icons
 // ─────────────────────────────────────────────────────────────────────────────
+
+static NSString *modeIcons[BLEModeCount] = {
+    @"sparkles",
+    @"exclamationmark.shield.fill",
+    @"appletv.fill",
+    @"airpodspro",
+    @"wave.3.right",
+    @"earbuds",
+    @"desktopcomputer",
+    @"bolt.horizontal.fill",
+    @"chevron.left.forwardslash.chevron.right",
+};
+
+static UIColor *modeIconColor(BLEMode mode) {
+    switch (mode) {
+        case BLEModeKitchenSink:      return CLR_ACCENT;
+        case BLEModeiOS17Crash:       return CLR_DANGER;
+        case BLEModeAppleActionModal: return [UIColor colorWithRed:.35 green:.34 blue:.84 alpha:1]; // systemIndigo
+        case BLEModeAppleDevicePopup: return CLR_ACCENT;
+        case BLEModeAndroidFastPair:  return CLR_SUCCESS;
+        case BLEModeSamsungEasySetup: return [UIColor colorWithRed:.19 green:.69 blue:.78 alpha:1]; // systemTeal
+        case BLEModeWindowsSwiftPair: return [UIColor colorWithRed:.20 green:.68 blue:.90 alpha:1]; // systemCyan
+        case BLEModeLovespouse:       return [UIColor colorWithRed:1.0 green:.18 blue:.33 alpha:1]; // systemPink
+        case BLEModeCustom:           return CLR_ORANGE;
+        default:                      return CLR_ACCENT;
+    }
+}
+
+static UIImage *settingsBadgeImage(NSString *symbolName, UIColor *bgColor) {
+    CGSize size = CGSizeMake(29, 29);
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:size];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+        UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, size.width, size.height)
+                                                        cornerRadius:7.0];
+        [bgColor setFill];
+        [path fill];
+
+        UIImageSymbolConfiguration *symCfg = [UIImageSymbolConfiguration configurationWithPointSize:14
+                                                                                             weight:UIImageSymbolWeightSemibold];
+        UIImage *sym = [[UIImage systemImageNamed:symbolName withConfiguration:symCfg]
+                        imageWithTintColor:UIColor.whiteColor
+                             renderingMode:UIImageRenderingModeAlwaysOriginal];
+        if (sym) {
+            CGSize s = sym.size;
+            CGRect r = CGRectMake((size.width - s.width) * 0.5, (size.height - s.height) * 0.5, s.width, s.height);
+            [sym drawInRect:r];
+        }
+    }];
+}
 
 static UILabel *label(NSString *text, UIFont *font, UIColor *color) {
     UILabel *l = [UILabel new];
@@ -401,12 +451,13 @@ static UIView *card(void) {
     UIView *v = [[UIView alloc] initWithFrame:CGRectZero];
     v.backgroundColor = CLR_CARD;
     v.layer.cornerRadius = CORNER_CARD;
+    v.layer.cornerCurve = kCACornerCurveContinuous;
     v.translatesAutoresizingMaskIntoConstraints = NO;
     return v;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MARK: - Status Card (reused across tabs)
+// MARK: - Status View (compact native row inside grouped section)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @interface StatusCardView : UIView
@@ -419,75 +470,63 @@ static UIView *card(void) {
 
 - (instancetype)init {
     self = [super init];
-    self.backgroundColor = CLR_CARD;
-    self.layer.cornerRadius = CORNER_CARD;
+    self.backgroundColor = UIColor.clearColor;
     self.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // dot
-    _statusDot = [[UIView alloc] initWithFrame:CGRectMake(0,0,10,10)];
-    _statusDot.layer.cornerRadius = 5;
+    _statusDot = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 8, 8)];
+    _statusDot.layer.cornerRadius = 4;
     _statusDot.backgroundColor = CLR_FG3;
     _statusDot.translatesAutoresizingMaskIntoConstraints = NO;
     [self addSubview:_statusDot];
 
-    _statusLbl = label(@"Idle", [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold], CLR_FG2);
-    _modeLbl   = label(@"—", [UIFont systemFontOfSize:17 weight:UIFontWeightBold], CLR_FG);
-    _delayLbl  = label(@"—", [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightMedium], CLR_FG2);
-    _ppsLbl    = label(@"0 pps", [UIFont monospacedDigitSystemFontOfSize:22 weight:UIFontWeightBold], CLR_ACCENT);
-    [self addSubview:_statusLbl]; [self addSubview:_modeLbl];
-    [self addSubview:_delayLbl];  [self addSubview:_ppsLbl];
+    _statusLbl = label(@"Idle", [UIFont systemFontOfSize:13 weight:UIFontWeightMedium], CLR_FG2);
+    _modeLbl   = label(@"—", [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold], CLR_FG);
+    _delayLbl  = label(@"—", [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightRegular], CLR_FG2);
+    _ppsLbl    = label(@"0 pps", [UIFont monospacedDigitSystemFontOfSize:15 weight:UIFontWeightSemibold], CLR_FG2);
+    _ppsLbl.textAlignment = NSTextAlignmentRight;
 
-    UILabel *ppsCaption = label(@"packets / sec", [UIFont systemFontOfSize:11], CLR_FG3);
-    [self addSubview:ppsCaption];
-
-    UIView *sep = separator();
-    [self addSubview:sep];
+    [self addSubview:_statusLbl];
+    [self addSubview:_modeLbl];
+    [self addSubview:_delayLbl];
+    [self addSubview:_ppsLbl];
 
     [NSLayoutConstraint activateConstraints:@[
-        [_statusDot.leadingAnchor  constraintEqualToAnchor:self.leadingAnchor  constant:16],
-        [_statusDot.centerYAnchor  constraintEqualToAnchor:_statusLbl.centerYAnchor],
-        [_statusDot.widthAnchor    constraintEqualToConstant:10],
-        [_statusDot.heightAnchor   constraintEqualToConstant:10],
-
-        [_statusLbl.leadingAnchor  constraintEqualToAnchor:_statusDot.trailingAnchor constant:6],
-        [_statusLbl.topAnchor      constraintEqualToAnchor:self.topAnchor constant:16],
-
         [_modeLbl.leadingAnchor    constraintEqualToAnchor:self.leadingAnchor constant:16],
-        [_modeLbl.topAnchor        constraintEqualToAnchor:_statusLbl.bottomAnchor constant:4],
-        [_modeLbl.trailingAnchor   constraintEqualToAnchor:self.trailingAnchor constant:-16],
+        [_modeLbl.topAnchor        constraintEqualToAnchor:self.topAnchor constant:12],
+        [_modeLbl.trailingAnchor   constraintLessThanOrEqualToAnchor:_ppsLbl.leadingAnchor constant:-12],
 
         [_delayLbl.leadingAnchor   constraintEqualToAnchor:self.leadingAnchor constant:16],
-        [_delayLbl.topAnchor       constraintEqualToAnchor:_modeLbl.bottomAnchor constant:4],
+        [_delayLbl.topAnchor       constraintEqualToAnchor:_modeLbl.bottomAnchor constant:3],
+        [_delayLbl.bottomAnchor    constraintEqualToAnchor:self.bottomAnchor constant:-12],
 
-        [sep.leadingAnchor         constraintEqualToAnchor:self.leadingAnchor constant:16],
-        [sep.trailingAnchor        constraintEqualToAnchor:self.trailingAnchor constant:-16],
-        [sep.topAnchor             constraintEqualToAnchor:_delayLbl.bottomAnchor constant:12],
-        [sep.heightAnchor          constraintEqualToConstant:.5],
+        [_ppsLbl.trailingAnchor    constraintEqualToAnchor:self.trailingAnchor constant:-16],
+        [_ppsLbl.centerYAnchor     constraintEqualToAnchor:_modeLbl.centerYAnchor],
 
-        [_ppsLbl.leadingAnchor     constraintEqualToAnchor:self.leadingAnchor constant:16],
-        [_ppsLbl.topAnchor         constraintEqualToAnchor:sep.bottomAnchor constant:12],
-        [_ppsLbl.bottomAnchor      constraintEqualToAnchor:self.bottomAnchor constant:-16],
+        [_statusLbl.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-16],
+        [_statusLbl.centerYAnchor  constraintEqualToAnchor:_delayLbl.centerYAnchor],
 
-        [ppsCaption.leadingAnchor  constraintEqualToAnchor:_ppsLbl.trailingAnchor constant:8],
-        [ppsCaption.centerYAnchor  constraintEqualToAnchor:_ppsLbl.centerYAnchor],
+        [_statusDot.trailingAnchor constraintEqualToAnchor:_statusLbl.leadingAnchor constant:-6],
+        [_statusDot.centerYAnchor  constraintEqualToAnchor:_statusLbl.centerYAnchor],
+        [_statusDot.widthAnchor    constraintEqualToConstant:8],
+        [_statusDot.heightAnchor   constraintEqualToConstant:8],
     ]];
     return self;
 }
 
 - (void)updateWithMode:(BLEMode)m active:(BOOL)active delay:(NSTimeInterval)d pps:(NSUInteger)pps packets:(NSUInteger)pkts {
-    _modeLbl.text   = modeNames[m];
-    _delayLbl.text  = [NSString stringWithFormat:@"%lu ms interval · %lu total", (unsigned long)(d*1000), (unsigned long)pkts];
-    _ppsLbl.text    = [NSString stringWithFormat:@"%lu", (unsigned long)pps];
+    _modeLbl.text  = modeNames[m];
+    _delayLbl.text = [NSString stringWithFormat:@"%lu ms interval · %lu sent", (unsigned long)(d * 1000), (unsigned long)pkts];
+    _ppsLbl.text   = [NSString stringWithFormat:@"%lu pps", (unsigned long)pps];
     if (active) {
-        _statusLbl.text             = @"Broadcasting";
-        _statusLbl.textColor        = CLR_ORANGE;
-        _statusDot.backgroundColor  = CLR_ORANGE;
-        _ppsLbl.textColor           = CLR_ORANGE;
+        _statusLbl.text            = @"Broadcasting";
+        _statusLbl.textColor       = CLR_ORANGE;
+        _statusDot.backgroundColor = CLR_ORANGE;
+        _ppsLbl.textColor          = CLR_ORANGE;
     } else {
-        _statusLbl.text             = @"Idle";
-        _statusLbl.textColor        = CLR_FG2;
-        _statusDot.backgroundColor  = CLR_FG3;
-        _ppsLbl.textColor           = CLR_ACCENT;
+        _statusLbl.text            = @"Ready";
+        _statusLbl.textColor       = CLR_FG2;
+        _statusDot.backgroundColor = CLR_FG3;
+        _ppsLbl.textColor          = CLR_FG2;
     }
 }
 
@@ -510,50 +549,33 @@ static UIView *card(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = CLR_BG;
-
-    // Large title
     self.navigationItem.title = @"Payloads";
-    self.navigationController.navigationBar.prefersLargeTitles = YES;
-    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
 
-    // Status card
     _statusCard = [StatusCardView new];
-    [self.view addSubview:_statusCard];
 
-    // Start/Stop button
     _startStopBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     _startStopBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [_startStopBtn setTitle:@"START" forState:UIControlStateNormal];
-    _startStopBtn.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
+    _startStopBtn.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
     _startStopBtn.tintColor = CLR_FG;
     _startStopBtn.backgroundColor = CLR_ACCENT;
-    _startStopBtn.layer.cornerRadius = CORNER_BTN + 6;
+    _startStopBtn.layer.cornerRadius = CORNER_BTN;
+    _startStopBtn.layer.cornerCurve = kCACornerCurveContinuous;
     [_startStopBtn addTarget:self action:@selector(toggleSpam) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:_startStopBtn];
 
-    // Mode table
     _tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
     _tableView.translatesAutoresizingMaskIntoConstraints = NO;
     _tableView.backgroundColor = CLR_BG;
+    _tableView.separatorColor = CLR_SEP;
     _tableView.delegate = self;
     _tableView.dataSource = self;
-    _tableView.scrollEnabled = YES;
-    [_tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"cell"];
+    _tableView.rowHeight = UITableViewAutomaticDimension;
+    _tableView.estimatedRowHeight = 56;
+    [_tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"modeCell"];
     [self.view addSubview:_tableView];
 
-    // Layout
-    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [_statusCard.topAnchor      constraintEqualToAnchor:safe.topAnchor constant:12],
-        [_statusCard.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor constant:16],
-        [_statusCard.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
-
-        [_startStopBtn.topAnchor      constraintEqualToAnchor:_statusCard.bottomAnchor constant:12],
-        [_startStopBtn.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor constant:16],
-        [_startStopBtn.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
-        [_startStopBtn.heightAnchor   constraintEqualToConstant:54],
-
-        [_tableView.topAnchor      constraintEqualToAnchor:_startStopBtn.bottomAnchor constant:8],
+        [_tableView.topAnchor      constraintEqualToAnchor:self.view.topAnchor],
         [_tableView.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor],
         [_tableView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
         [_tableView.bottomAnchor   constraintEqualToAnchor:self.view.bottomAnchor],
@@ -564,6 +586,8 @@ static UIView *card(void) {
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self updateUI];
+    [_tableView reloadData];
     _uiTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t){ [self updateUI]; }];
 }
 
@@ -576,35 +600,25 @@ static UIView *card(void) {
     BLESpamEngine *e = BLESpamEngine.shared;
     [_statusCard updateWithMode:e.mode active:e.isSpamming delay:e.interval pps:e.pps packets:e.totalSent];
 
+    UIImageSymbolConfiguration *symCfg = [UIImageSymbolConfiguration configurationWithPointSize:14 weight:UIImageSymbolWeightSemibold];
     if (e.isSpamming) {
-        [_startStopBtn setTitle:@"STOP" forState:UIControlStateNormal];
+        UIImage *stopImg = [UIImage systemImageNamed:@"stop.fill" withConfiguration:symCfg];
+        [_startStopBtn setImage:stopImg forState:UIControlStateNormal];
+        [_startStopBtn setTitle:@"  Stop Broadcast" forState:UIControlStateNormal];
         _startStopBtn.backgroundColor = CLR_DANGER;
-        [self animatePulse:YES];
+        [self animatePulse:NO];
     } else {
-        [_startStopBtn setTitle:@"START" forState:UIControlStateNormal];
+        UIImage *playImg = [UIImage systemImageNamed:@"dot.radiowaves.left.and.right" withConfiguration:symCfg];
+        [_startStopBtn setImage:playImg forState:UIControlStateNormal];
+        [_startStopBtn setTitle:@"  Start Broadcast" forState:UIControlStateNormal];
         _startStopBtn.backgroundColor = CLR_ACCENT;
         [self animatePulse:NO];
     }
 }
 
 - (void)animatePulse:(BOOL)on {
-    if (on) {
-        if (_pulseLayer) return;
-        _pulseLayer = [CAShapeLayer layer];
-        _pulseLayer.path = [UIBezierPath bezierPathWithRoundedRect:_startStopBtn.bounds
-                                                      cornerRadius:CORNER_BTN + 6].CGPath;
-        _pulseLayer.fillColor = [CLR_DANGER colorWithAlphaComponent:0.4].CGColor;
-        [_startStopBtn.layer insertSublayer:_pulseLayer atIndex:0];
-
-        CABasicAnimation *a = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
-        a.fromValue = @1.0; a.toValue = @1.08;
-        a.duration = 0.7; a.autoreverses = YES;
-        a.repeatCount = HUGE_VALF;
-        [_pulseLayer addAnimation:a forKey:@"pulse"];
-    } else {
-        [_pulseLayer removeFromSuperlayer];
-        _pulseLayer = nil;
-    }
+    [_pulseLayer removeFromSuperlayer];
+    _pulseLayer = nil;
 }
 
 - (void)toggleSpam {
@@ -617,21 +631,71 @@ static UIView *card(void) {
 
 // ── UITableView ───────────────────────────────────────────────────────────────
 
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return BLEModeCount; }
-- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s { return @"Select Mode"; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 2; }
+
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
+    return (s == 0) ? 2 : BLEModeCount;
+}
+
+- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
+    return (s == 0) ? @"Broadcast Control" : @"Advertising Mode";
+}
+
+- (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
+    if (s == 1) {
+        return @"Select a proximity payload profile. Mode changes apply on the next packet cycle.";
+    }
+    return nil;
+}
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:@"cell" forIndexPath:ip];
+    if (ip.section == 0) {
+        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        cell.backgroundColor = CLR_CARD;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+
+        if (ip.row == 0) {
+            [_statusCard removeFromSuperview];
+            [cell.contentView addSubview:_statusCard];
+            [NSLayoutConstraint activateConstraints:@[
+                [_statusCard.topAnchor      constraintEqualToAnchor:cell.contentView.topAnchor],
+                [_statusCard.leadingAnchor  constraintEqualToAnchor:cell.contentView.leadingAnchor],
+                [_statusCard.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor],
+                [_statusCard.bottomAnchor   constraintEqualToAnchor:cell.contentView.bottomAnchor],
+            ]];
+        } else {
+            [_startStopBtn removeFromSuperview];
+            [cell.contentView addSubview:_startStopBtn];
+            [NSLayoutConstraint activateConstraints:@[
+                [_startStopBtn.topAnchor      constraintEqualToAnchor:cell.contentView.topAnchor constant:8],
+                [_startStopBtn.leadingAnchor  constraintEqualToAnchor:cell.contentView.leadingAnchor constant:12],
+                [_startStopBtn.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-12],
+                [_startStopBtn.bottomAnchor   constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-8],
+                [_startStopBtn.heightAnchor   constraintEqualToConstant:44],
+            ]];
+        }
+        return cell;
+    }
+
+    UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:@"modeCell" forIndexPath:ip];
     cell.backgroundColor = CLR_CARD;
 
+    BLEMode m = (BLEMode)ip.row;
     UIListContentConfiguration *cfg = [cell defaultContentConfiguration];
-    cfg.text = modeNames[ip.row];
-    cfg.secondaryText = modeDescriptions[ip.row];
+    cfg.text = modeNames[m];
+    cfg.secondaryText = modeDescriptions[m];
+    cfg.image = settingsBadgeImage(modeIcons[m], modeIconColor(m));
+    cfg.imageToTextPadding = 12;
     cfg.textProperties.color = CLR_FG;
     cfg.secondaryTextProperties.color = CLR_FG2;
-    cfg.textProperties.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
-    cfg.secondaryTextProperties.font = [UIFont systemFontOfSize:12];
+    cfg.textProperties.font = [UIFont systemFontOfSize:16 weight:UIFontWeightRegular];
+    cfg.secondaryTextProperties.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
+    cfg.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(10, 16, 10, 16);
     cell.contentConfiguration = cfg;
+
+    UIView *selBg = [UIView new];
+    selBg.backgroundColor = CLR_FIELD;
+    cell.selectedBackgroundView = selBg;
 
     cell.accessoryType = (ip.row == (NSInteger)BLESpamEngine.shared.mode)
         ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
@@ -641,8 +705,10 @@ static UIView *card(void) {
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
+    if (ip.section != 1) return;
     BLESpamEngine.shared.mode = (BLEMode)ip.row;
-    [tv reloadData];
+    [self updateUI];
+    [tv reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
     UISelectionFeedbackGenerator *f = [UISelectionFeedbackGenerator new];
     [f selectionChanged];
 }
@@ -653,10 +719,11 @@ static UIView *card(void) {
 // MARK: - Timing Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-@interface TimingVC : UIViewController
+@interface TimingVC : UIViewController <UITableViewDataSource, UITableViewDelegate>
 @property UILabel *valueLabel;
 @property UISlider *slider;
 @property UISegmentedControl *presets;
+@property UITableView *tableView;
 @end
 
 @implementation TimingVC
@@ -665,87 +732,24 @@ static UIView *card(void) {
     [super viewDidLoad];
     self.view.backgroundColor = CLR_BG;
     self.navigationItem.title = @"Timing";
-    self.navigationController.navigationBar.prefersLargeTitles = YES;
-    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
-
-    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectZero];
-    scroll.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:scroll];
-    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
-    [NSLayoutConstraint activateConstraints:@[
-        [scroll.topAnchor    constraintEqualToAnchor:safe.topAnchor],
-        [scroll.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-        [scroll.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [scroll.bottomAnchor  constraintEqualToAnchor:self.view.bottomAnchor],
-    ]];
-
-    UIView *content = [[UIView alloc] initWithFrame:CGRectZero];
-    content.translatesAutoresizingMaskIntoConstraints = NO;
-    [scroll addSubview:content];
-    [NSLayoutConstraint activateConstraints:@[
-        [content.topAnchor     constraintEqualToAnchor:scroll.topAnchor],
-        [content.leadingAnchor constraintEqualToAnchor:scroll.leadingAnchor],
-        [content.trailingAnchor constraintEqualToAnchor:scroll.trailingAnchor],
-        [content.bottomAnchor  constraintEqualToAnchor:scroll.bottomAnchor],
-        [content.widthAnchor   constraintEqualToAnchor:scroll.widthAnchor],
-    ]];
-
-    // ── Presets card ──────────────────────────────────────────────────────────
-    UIView *presetsCard = card();
-    [content addSubview:presetsCard];
-
-    UILabel *presetsTitle = label(@"SPEED PRESET", [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold], CLR_FG3);
-    [presetsCard addSubview:presetsTitle];
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
 
     _presets = [[UISegmentedControl alloc] initWithItems:@[@"20ms", @"50ms", @"100ms", @"200ms", @"500ms"]];
     _presets.translatesAutoresizingMaskIntoConstraints = NO;
     _presets.selectedSegmentIndex = 2;
     _presets.selectedSegmentTintColor = CLR_ACCENT;
-    [_presets setTitleTextAttributes:@{NSForegroundColorAttributeName: CLR_FG} forState:UIControlStateNormal];
-    [_presets setTitleTextAttributes:@{NSForegroundColorAttributeName: CLR_FG} forState:UIControlStateSelected];
-    _presets.backgroundColor = [UIColor colorWithWhite:.15 alpha:1];
+    [_presets setTitleTextAttributes:@{
+        NSForegroundColorAttributeName: CLR_FG,
+        NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightMedium]
+    } forState:UIControlStateNormal];
+    [_presets setTitleTextAttributes:@{
+        NSForegroundColorAttributeName: CLR_FG,
+        NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold]
+    } forState:UIControlStateSelected];
     [_presets addTarget:self action:@selector(presetChanged) forControlEvents:UIControlEventValueChanged];
-    [presetsCard addSubview:_presets];
 
-    NSArray *presetLabels = @[@"Insane", @"Fast", @"Normal", @"Slow", @"Stealth"];
-    UIStackView *labelStack = [[UIStackView alloc] initWithFrame:CGRectZero];
-    labelStack.translatesAutoresizingMaskIntoConstraints = NO;
-    labelStack.axis = UILayoutConstraintAxisHorizontal;
-    labelStack.distribution = UIStackViewDistributionFillEqually;
-    for (NSString *s in presetLabels) {
-        UILabel *l = label(s, [UIFont systemFontOfSize:10], CLR_FG3);
-        l.textAlignment = NSTextAlignmentCenter;
-        [labelStack addArrangedSubview:l];
-    }
-    [presetsCard addSubview:labelStack];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [presetsCard.topAnchor      constraintEqualToAnchor:content.topAnchor constant:16],
-        [presetsCard.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor constant:16],
-        [presetsCard.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-16],
-
-        [presetsTitle.topAnchor     constraintEqualToAnchor:presetsCard.topAnchor constant:14],
-        [presetsTitle.leadingAnchor constraintEqualToAnchor:presetsCard.leadingAnchor constant:16],
-
-        [_presets.topAnchor     constraintEqualToAnchor:presetsTitle.bottomAnchor constant:10],
-        [_presets.leadingAnchor constraintEqualToAnchor:presetsCard.leadingAnchor constant:16],
-        [_presets.trailingAnchor constraintEqualToAnchor:presetsCard.trailingAnchor constant:-16],
-
-        [labelStack.topAnchor     constraintEqualToAnchor:_presets.bottomAnchor constant:4],
-        [labelStack.leadingAnchor constraintEqualToAnchor:presetsCard.leadingAnchor constant:16],
-        [labelStack.trailingAnchor constraintEqualToAnchor:presetsCard.trailingAnchor constant:-16],
-        [labelStack.bottomAnchor  constraintEqualToAnchor:presetsCard.bottomAnchor constant:-14],
-    ]];
-
-    // ── Slider card ───────────────────────────────────────────────────────────
-    UIView *sliderCard = card();
-    [content addSubview:sliderCard];
-
-    UILabel *sliderTitle = label(@"CUSTOM INTERVAL", [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold], CLR_FG3);
-    [sliderCard addSubview:sliderTitle];
-
-    _valueLabel = label(@"100 ms", [UIFont monospacedDigitSystemFontOfSize:32 weight:UIFontWeightBold], CLR_FG);
-    [sliderCard addSubview:_valueLabel];
+    _valueLabel = label(@"100 ms", [UIFont monospacedDigitSystemFontOfSize:16 weight:UIFontWeightSemibold], CLR_ACCENT);
+    _valueLabel.textAlignment = NSTextAlignmentRight;
 
     _slider = [[UISlider alloc] initWithFrame:CGRectZero];
     _slider.translatesAutoresizingMaskIntoConstraints = NO;
@@ -753,63 +757,101 @@ static UIView *card(void) {
     _slider.maximumValue = 2000;
     _slider.value = 100;
     _slider.minimumTrackTintColor = CLR_ACCENT;
-    _slider.thumbTintColor = CLR_FG;
+    UIImageSymbolConfiguration *symCfg = [UIImageSymbolConfiguration configurationWithPointSize:12 weight:UIImageSymbolWeightMedium];
+    _slider.minimumValueImage = [[UIImage systemImageNamed:@"hare" withConfiguration:symCfg]
+                                 imageWithTintColor:CLR_FG2 renderingMode:UIImageRenderingModeAlwaysOriginal];
+    _slider.maximumValueImage = [[UIImage systemImageNamed:@"tortoise" withConfiguration:symCfg]
+                                 imageWithTintColor:CLR_FG2 renderingMode:UIImageRenderingModeAlwaysOriginal];
     [_slider addTarget:self action:@selector(sliderChanged) forControlEvents:UIControlEventValueChanged];
-    [sliderCard addSubview:_slider];
 
-    UILabel *minL = label(@"10 ms", [UIFont systemFontOfSize:11], CLR_FG3);
-    UILabel *maxL = label(@"2000 ms", [UIFont systemFontOfSize:11], CLR_FG3);
-    maxL.textAlignment = NSTextAlignmentRight;
-    minL.translatesAutoresizingMaskIntoConstraints = NO;
-    maxL.translatesAutoresizingMaskIntoConstraints = NO;
-    [sliderCard addSubview:minL]; [sliderCard addSubview:maxL];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [sliderCard.topAnchor      constraintEqualToAnchor:presetsCard.bottomAnchor constant:16],
-        [sliderCard.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor constant:16],
-        [sliderCard.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-16],
-
-        [sliderTitle.topAnchor     constraintEqualToAnchor:sliderCard.topAnchor constant:14],
-        [sliderTitle.leadingAnchor constraintEqualToAnchor:sliderCard.leadingAnchor constant:16],
-
-        [_valueLabel.topAnchor    constraintEqualToAnchor:sliderTitle.bottomAnchor constant:8],
-        [_valueLabel.centerXAnchor constraintEqualToAnchor:sliderCard.centerXAnchor],
-
-        [_slider.topAnchor     constraintEqualToAnchor:_valueLabel.bottomAnchor constant:12],
-        [_slider.leadingAnchor constraintEqualToAnchor:sliderCard.leadingAnchor constant:16],
-        [_slider.trailingAnchor constraintEqualToAnchor:sliderCard.trailingAnchor constant:-16],
-
-        [minL.topAnchor     constraintEqualToAnchor:_slider.bottomAnchor constant:4],
-        [minL.leadingAnchor constraintEqualToAnchor:sliderCard.leadingAnchor constant:16],
-        [minL.bottomAnchor  constraintEqualToAnchor:sliderCard.bottomAnchor constant:-14],
-
-        [maxL.topAnchor      constraintEqualToAnchor:_slider.bottomAnchor constant:4],
-        [maxL.trailingAnchor constraintEqualToAnchor:sliderCard.trailingAnchor constant:-16],
-        [maxL.bottomAnchor   constraintEqualToAnchor:sliderCard.bottomAnchor constant:-14],
-    ]];
-
-    // ── Info card ─────────────────────────────────────────────────────────────
-    UIView *infoCard = card();
-    [content addSubview:infoCard];
-
-    UILabel *infoText = label(
-        @"Changes take effect immediately — no need to restart broadcasting.",
-        [UIFont systemFontOfSize:13], CLR_FG2
-    );
-    infoText.numberOfLines = 0;
-    [infoCard addSubview:infoText];
+    _tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
+    _tableView.translatesAutoresizingMaskIntoConstraints = NO;
+    _tableView.backgroundColor = CLR_BG;
+    _tableView.separatorColor = CLR_SEP;
+    _tableView.dataSource = self;
+    _tableView.delegate = self;
+    _tableView.rowHeight = UITableViewAutomaticDimension;
+    _tableView.estimatedRowHeight = 52;
+    [self.view addSubview:_tableView];
 
     [NSLayoutConstraint activateConstraints:@[
-        [infoCard.topAnchor      constraintEqualToAnchor:sliderCard.bottomAnchor constant:16],
-        [infoCard.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor constant:16],
-        [infoCard.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-16],
-        [infoCard.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor constant:-32],
-
-        [infoText.topAnchor     constraintEqualToAnchor:infoCard.topAnchor constant:14],
-        [infoText.leadingAnchor constraintEqualToAnchor:infoCard.leadingAnchor constant:16],
-        [infoText.trailingAnchor constraintEqualToAnchor:infoCard.trailingAnchor constant:-16],
-        [infoText.bottomAnchor  constraintEqualToAnchor:infoCard.bottomAnchor constant:-14],
+        [_tableView.topAnchor      constraintEqualToAnchor:self.view.topAnchor],
+        [_tableView.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor],
+        [_tableView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [_tableView.bottomAnchor   constraintEqualToAnchor:self.view.bottomAnchor],
     ]];
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 2; }
+
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
+    return (s == 0) ? 1 : 2;
+}
+
+- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
+    return (s == 0) ? @"Speed Preset" : @"Custom Interval";
+}
+
+- (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
+    if (s == 0) {
+        return @"Presets: 20 ms (Insane) · 50 ms (Fast) · 100 ms (Normal) · 200 ms (Slow) · 500 ms (Stealth).";
+    }
+    return @"Changes take effect immediately without restarting the active broadcast.";
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    cell.backgroundColor = CLR_CARD;
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+
+    if (ip.section == 0) {
+        [_presets removeFromSuperview];
+        [cell.contentView addSubview:_presets];
+        [NSLayoutConstraint activateConstraints:@[
+            [_presets.topAnchor      constraintEqualToAnchor:cell.contentView.topAnchor constant:12],
+            [_presets.leadingAnchor  constraintEqualToAnchor:cell.contentView.leadingAnchor constant:16],
+            [_presets.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-16],
+            [_presets.bottomAnchor   constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-12],
+            [_presets.heightAnchor   constraintEqualToConstant:32],
+        ]];
+        return cell;
+    }
+
+    if (ip.row == 0) {
+        UILabel *rowTitle = label(@"Advertising Delay", [UIFont systemFontOfSize:16 weight:UIFontWeightRegular], CLR_FG);
+        [_valueLabel removeFromSuperview];
+        [cell.contentView addSubview:rowTitle];
+        [cell.contentView addSubview:_valueLabel];
+        [NSLayoutConstraint activateConstraints:@[
+            [rowTitle.leadingAnchor     constraintEqualToAnchor:cell.contentView.leadingAnchor constant:16],
+            [rowTitle.topAnchor         constraintEqualToAnchor:cell.contentView.topAnchor constant:12],
+            [rowTitle.bottomAnchor      constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-12],
+            [_valueLabel.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-16],
+            [_valueLabel.centerYAnchor  constraintEqualToAnchor:rowTitle.centerYAnchor],
+        ]];
+    } else {
+        [_slider removeFromSuperview];
+        UILabel *minL = label(@"10 ms", [UIFont systemFontOfSize:11 weight:UIFontWeightRegular], CLR_FG2);
+        UILabel *maxL = label(@"2000 ms", [UIFont systemFontOfSize:11 weight:UIFontWeightRegular], CLR_FG2);
+        maxL.textAlignment = NSTextAlignmentRight;
+        [cell.contentView addSubview:_slider];
+        [cell.contentView addSubview:minL];
+        [cell.contentView addSubview:maxL];
+        [NSLayoutConstraint activateConstraints:@[
+            [_slider.topAnchor      constraintEqualToAnchor:cell.contentView.topAnchor constant:12],
+            [_slider.leadingAnchor  constraintEqualToAnchor:cell.contentView.leadingAnchor constant:16],
+            [_slider.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-16],
+
+            [minL.topAnchor         constraintEqualToAnchor:_slider.bottomAnchor constant:4],
+            [minL.leadingAnchor     constraintEqualToAnchor:cell.contentView.leadingAnchor constant:16],
+            [minL.bottomAnchor      constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-10],
+
+            [maxL.topAnchor         constraintEqualToAnchor:_slider.bottomAnchor constant:4],
+            [maxL.trailingAnchor    constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-16],
+            [maxL.bottomAnchor      constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-10],
+        ]];
+    }
+    return cell;
 }
 
 - (void)presetChanged {
@@ -835,9 +877,10 @@ static UIView *card(void) {
 // MARK: - Custom Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-@interface CustomVC : UIViewController <UITextFieldDelegate>
+@interface CustomVC : UIViewController <UITextFieldDelegate, UITableViewDataSource, UITableViewDelegate>
 @property UITextField *hexField;
 @property UILabel *parseResult;
+@property UITableView *tableView;
 @end
 
 @implementation CustomVC
@@ -846,89 +889,168 @@ static UIView *card(void) {
     [super viewDidLoad];
     self.view.backgroundColor = CLR_BG;
     self.navigationItem.title = @"Custom";
-    self.navigationController.navigationBar.prefersLargeTitles = YES;
-    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
-
-    UIView *fieldCard = card();
-    [self.view addSubview:fieldCard];
-
-    UILabel *fieldTitle = label(@"RAW HEX PAYLOAD", [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold], CLR_FG3);
-    [fieldCard addSubview:fieldTitle];
-
-    UILabel *hint = label(@"Enter manufacturer data bytes (Company ID first, little-endian)", [UIFont systemFontOfSize:12], CLR_FG3);
-    hint.numberOfLines = 2;
-    [fieldCard addSubview:hint];
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
 
     _hexField = [[UITextField alloc] initWithFrame:CGRectZero];
     _hexField.translatesAutoresizingMaskIntoConstraints = NO;
-    _hexField.backgroundColor = [UIColor colorWithWhite:.08 alpha:1];
-    _hexField.textColor = CLR_ACCENT;
-    _hexField.font = [UIFont monospacedSystemFontOfSize:15 weight:UIFontWeightMedium];
-    _hexField.layer.cornerRadius = 10;
+    _hexField.backgroundColor = CLR_FIELD;
+    _hexField.textColor = CLR_FG;
+    _hexField.tintColor = CLR_ACCENT;
+    _hexField.font = [UIFont monospacedSystemFontOfSize:15 weight:UIFontWeightRegular];
+    _hexField.layer.cornerRadius = 8;
+    _hexField.layer.cornerCurve = kCACornerCurveContinuous;
     _hexField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"4C 00 07 19 07 00 …"
         attributes:@{NSForegroundColorAttributeName: CLR_FG3}];
     _hexField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
     _hexField.autocorrectionType = UITextAutocorrectionTypeNo;
+    _hexField.spellCheckingType = UITextSpellCheckingTypeNo;
     _hexField.keyboardType = UIKeyboardTypeASCIICapable;
-    _hexField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0,0,12,0)];
+    _hexField.clearButtonMode = UITextFieldViewModeWhileEditing;
+    _hexField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 10, 0)];
     _hexField.leftViewMode = UITextFieldViewModeAlways;
     _hexField.returnKeyType = UIReturnKeyDone;
     _hexField.delegate = self;
     [_hexField addTarget:self action:@selector(hexChanged) forControlEvents:UIControlEventEditingChanged];
-    [fieldCard addSubview:_hexField];
 
-    _parseResult = label(@"", [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular], CLR_FG2);
+    // Keyboard toolbar so the user can always dismiss or paste on small iPhones
+    UIToolbar *kbBar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, UIScreen.mainScreen.bounds.size.width, 44)];
+    kbBar.barStyle = UIBarStyleBlack;
+    kbBar.translucent = YES;
+    kbBar.tintColor = CLR_ACCENT;
+    UIBarButtonItem *pasteItem = [[UIBarButtonItem alloc] initWithTitle:@"Paste"
+                                                                  style:UIBarButtonItemStylePlain
+                                                                 target:self
+                                                                 action:@selector(pasteHex)];
+    UIBarButtonItem *flex = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
+                                                                          target:nil
+                                                                          action:nil];
+    UIBarButtonItem *doneItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
+                                                                              target:self
+                                                                              action:@selector(dismissKeyboard)];
+    kbBar.items = @[pasteItem, flex, doneItem];
+    _hexField.inputAccessoryView = kbBar;
+
+    _parseResult = label(@"Awaiting HEX input", [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular], CLR_FG2);
     _parseResult.numberOfLines = 0;
-    [fieldCard addSubview:_parseResult];
 
-    UIButton *applyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    applyBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [applyBtn setTitle:@"Apply & Set Mode to Custom" forState:UIControlStateNormal];
-    applyBtn.tintColor = CLR_FG;
-    applyBtn.backgroundColor = CLR_ACCENT;
-    applyBtn.layer.cornerRadius = CORNER_BTN;
-    applyBtn.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-    [applyBtn addTarget:self action:@selector(applyTapped) forControlEvents:UIControlEventTouchUpInside];
-    [fieldCard addSubview:applyBtn];
+    _tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
+    _tableView.translatesAutoresizingMaskIntoConstraints = NO;
+    _tableView.backgroundColor = CLR_BG;
+    _tableView.separatorColor = CLR_SEP;
+    _tableView.keyboardDismissMode = UIScrollViewKeyboardDismissModeInteractive;
+    _tableView.dataSource = self;
+    _tableView.delegate = self;
+    _tableView.rowHeight = UITableViewAutomaticDimension;
+    _tableView.estimatedRowHeight = 52;
+    [self.view addSubview:_tableView];
 
-    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+    UITapGestureRecognizer *bgTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
+    bgTap.cancelsTouchesInView = NO;
+    [_tableView addGestureRecognizer:bgTap];
+
     [NSLayoutConstraint activateConstraints:@[
-        [fieldCard.topAnchor      constraintEqualToAnchor:safe.topAnchor constant:16],
-        [fieldCard.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor constant:16],
-        [fieldCard.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
-
-        [fieldTitle.topAnchor     constraintEqualToAnchor:fieldCard.topAnchor constant:14],
-        [fieldTitle.leadingAnchor constraintEqualToAnchor:fieldCard.leadingAnchor constant:16],
-
-        [hint.topAnchor     constraintEqualToAnchor:fieldTitle.bottomAnchor constant:4],
-        [hint.leadingAnchor constraintEqualToAnchor:fieldCard.leadingAnchor constant:16],
-        [hint.trailingAnchor constraintEqualToAnchor:fieldCard.trailingAnchor constant:-16],
-
-        [_hexField.topAnchor     constraintEqualToAnchor:hint.bottomAnchor constant:10],
-        [_hexField.leadingAnchor constraintEqualToAnchor:fieldCard.leadingAnchor constant:16],
-        [_hexField.trailingAnchor constraintEqualToAnchor:fieldCard.trailingAnchor constant:-16],
-        [_hexField.heightAnchor  constraintEqualToConstant:44],
-
-        [_parseResult.topAnchor     constraintEqualToAnchor:_hexField.bottomAnchor constant:8],
-        [_parseResult.leadingAnchor constraintEqualToAnchor:fieldCard.leadingAnchor constant:16],
-        [_parseResult.trailingAnchor constraintEqualToAnchor:fieldCard.trailingAnchor constant:-16],
-
-        [applyBtn.topAnchor     constraintEqualToAnchor:_parseResult.bottomAnchor constant:12],
-        [applyBtn.leadingAnchor constraintEqualToAnchor:fieldCard.leadingAnchor constant:16],
-        [applyBtn.trailingAnchor constraintEqualToAnchor:fieldCard.trailingAnchor constant:-16],
-        [applyBtn.heightAnchor  constraintEqualToConstant:44],
-        [applyBtn.bottomAnchor  constraintEqualToAnchor:fieldCard.bottomAnchor constant:-16],
+        [_tableView.topAnchor      constraintEqualToAnchor:self.view.topAnchor],
+        [_tableView.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor],
+        [_tableView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [_tableView.bottomAnchor   constraintEqualToAnchor:self.view.bottomAnchor],
     ]];
+}
+
+- (void)dismissKeyboard {
+    [self.view endEditing:YES];
+}
+
+- (void)pasteHex {
+    if (UIPasteboard.generalPasteboard.string.length) {
+        _hexField.text = UIPasteboard.generalPasteboard.string;
+        [self hexChanged];
+    }
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 2; }
+
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
+    return (s == 0) ? 2 : 1;
+}
+
+- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
+    return (s == 0) ? @"Raw Manufacturer Data (HEX)" : nil;
+}
+
+- (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
+    if (s == 0) {
+        return @"Enter manufacturer data bytes in hexadecimal (Company ID first, little-endian, e.g. 4C 00 for Apple).";
+    }
+    return nil;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    cell.backgroundColor = CLR_CARD;
+
+    if (ip.section == 0 && ip.row == 0) {
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        [_hexField removeFromSuperview];
+        [cell.contentView addSubview:_hexField];
+        [NSLayoutConstraint activateConstraints:@[
+            [_hexField.topAnchor      constraintEqualToAnchor:cell.contentView.topAnchor constant:10],
+            [_hexField.leadingAnchor  constraintEqualToAnchor:cell.contentView.leadingAnchor constant:12],
+            [_hexField.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-12],
+            [_hexField.bottomAnchor   constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-10],
+            [_hexField.heightAnchor   constraintEqualToConstant:40],
+        ]];
+        return cell;
+    }
+
+    if (ip.section == 0 && ip.row == 1) {
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        UILabel *statusKey = label(@"Validation", [UIFont systemFontOfSize:14 weight:UIFontWeightRegular], CLR_FG2);
+        [_parseResult removeFromSuperview];
+        _parseResult.textAlignment = NSTextAlignmentRight;
+        [cell.contentView addSubview:statusKey];
+        [cell.contentView addSubview:_parseResult];
+        [NSLayoutConstraint activateConstraints:@[
+            [statusKey.leadingAnchor      constraintEqualToAnchor:cell.contentView.leadingAnchor constant:16],
+            [statusKey.topAnchor          constraintEqualToAnchor:cell.contentView.topAnchor constant:12],
+            [statusKey.bottomAnchor       constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-12],
+            [_parseResult.leadingAnchor   constraintGreaterThanOrEqualToAnchor:statusKey.trailingAnchor constant:12],
+            [_parseResult.trailingAnchor  constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-16],
+            [_parseResult.centerYAnchor   constraintEqualToAnchor:statusKey.centerYAnchor],
+        ]];
+        return cell;
+    }
+
+    // Section 1: Apply action cell
+    UIListContentConfiguration *cfg = [cell defaultContentConfiguration];
+    cfg.text = @"Apply & Select Custom Mode";
+    cfg.textProperties.color = CLR_ACCENT;
+    cfg.textProperties.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    cfg.textProperties.alignment = UIListContentTextAlignmentCenter;
+    cell.contentConfiguration = cfg;
+    UIView *selBg = [UIView new];
+    selBg.backgroundColor = CLR_FIELD;
+    cell.selectedBackgroundView = selBg;
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    if (ip.section == 1) {
+        [self applyTapped];
+    }
 }
 
 - (void)hexChanged {
     NSData *d = [self parseHex:_hexField.text];
     if (d) {
-        _parseResult.text = [NSString stringWithFormat:@"✓ %lu bytes", (unsigned long)d.length];
+        _parseResult.text = [NSString stringWithFormat:@"Valid (%lu bytes)", (unsigned long)d.length];
         _parseResult.textColor = CLR_SUCCESS;
-    } else {
-        _parseResult.text = _hexField.text.length ? @"Invalid hex" : @"";
+    } else if (_hexField.text.length > 0) {
+        _parseResult.text = @"Invalid HEX format";
         _parseResult.textColor = CLR_DANGER;
+    } else {
+        _parseResult.text = @"Awaiting HEX input";
+        _parseResult.textColor = CLR_FG2;
     }
 }
 
@@ -958,12 +1080,15 @@ static UIView *card(void) {
     BLESpamEngine.shared.mode = BLEModeCustom;
     UINotificationFeedbackGenerator *f = [UINotificationFeedbackGenerator new];
     [f notificationOccurred:UINotificationFeedbackTypeSuccess];
-    _parseResult.text = [NSString stringWithFormat:@"✓ Applied %lu bytes as Custom payload", (unsigned long)d.length];
+    _parseResult.text = [NSString stringWithFormat:@"Applied (%lu bytes)", (unsigned long)d.length];
     _parseResult.textColor = CLR_SUCCESS;
     [_hexField resignFirstResponder];
 }
 
-- (BOOL)textFieldShouldReturn:(UITextField *)tf { [tf resignFirstResponder]; return YES; }
+- (BOOL)textFieldShouldReturn:(UITextField *)tf {
+    [tf resignFirstResponder];
+    return YES;
+}
 
 @end
 
@@ -971,7 +1096,7 @@ static UIView *card(void) {
 // MARK: - Logs Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-@interface LogsVC : UIViewController <UITableViewDataSource>
+@interface LogsVC : UIViewController <UITableViewDataSource, UITableViewDelegate>
 @property UITableView *tv;
 @property NSMutableArray<NSString *> *logs;
 @property UILabel *counterLabel;
@@ -983,61 +1108,36 @@ static UIView *card(void) {
     [super viewDidLoad];
     self.view.backgroundColor = CLR_BG;
     self.navigationItem.title = @"Logs";
-    self.navigationController.navigationBar.prefersLargeTitles = YES;
-    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
+    self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
+
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Clear"
+                                                                              style:UIBarButtonItemStylePlain
+                                                                             target:self
+                                                                             action:@selector(clearLogs)];
+    self.navigationItem.rightBarButtonItem.tintColor = CLR_ACCENT;
 
     _logs = [NSMutableArray array];
+    _counterLabel = label(@"0", [UIFont monospacedDigitSystemFontOfSize:16 weight:UIFontWeightSemibold], CLR_ACCENT);
+    _counterLabel.textAlignment = NSTextAlignmentRight;
 
-    // Stats card
-    UIView *statsCard = card();
-    [self.view addSubview:statsCard];
-
-    _counterLabel = label(@"0", [UIFont monospacedDigitSystemFontOfSize:42 weight:UIFontWeightBold], CLR_ACCENT);
-    UILabel *counterCaption = label(@"Total packets sent", [UIFont systemFontOfSize:13], CLR_FG2);
-    [statsCard addSubview:_counterLabel];
-    [statsCard addSubview:counterCaption];
-
-    UIButton *clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    clearBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [clearBtn setTitle:@"Clear" forState:UIControlStateNormal];
-    clearBtn.tintColor = CLR_DANGER;
-    clearBtn.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
-    [clearBtn addTarget:self action:@selector(clearLogs) forControlEvents:UIControlEventTouchUpInside];
-    [statsCard addSubview:clearBtn];
-
-    // Table
     _tv = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
     _tv.translatesAutoresizingMaskIntoConstraints = NO;
     _tv.backgroundColor = CLR_BG;
+    _tv.separatorColor = CLR_SEP;
     _tv.dataSource = self;
+    _tv.delegate = self;
     _tv.rowHeight = UITableViewAutomaticDimension;
-    _tv.estimatedRowHeight = 44;
+    _tv.estimatedRowHeight = 40;
     [_tv registerClass:[UITableViewCell class] forCellReuseIdentifier:@"log"];
     [self.view addSubview:_tv];
 
-    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [statsCard.topAnchor      constraintEqualToAnchor:safe.topAnchor constant:12],
-        [statsCard.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor constant:16],
-        [statsCard.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
-
-        [_counterLabel.topAnchor    constraintEqualToAnchor:statsCard.topAnchor constant:14],
-        [_counterLabel.leadingAnchor constraintEqualToAnchor:statsCard.leadingAnchor constant:16],
-
-        [counterCaption.leadingAnchor  constraintEqualToAnchor:statsCard.leadingAnchor constant:16],
-        [counterCaption.topAnchor      constraintEqualToAnchor:_counterLabel.bottomAnchor constant:2],
-        [counterCaption.bottomAnchor   constraintEqualToAnchor:statsCard.bottomAnchor constant:-14],
-
-        [clearBtn.trailingAnchor  constraintEqualToAnchor:statsCard.trailingAnchor constant:-16],
-        [clearBtn.centerYAnchor   constraintEqualToAnchor:statsCard.centerYAnchor],
-
-        [_tv.topAnchor      constraintEqualToAnchor:statsCard.bottomAnchor constant:8],
+        [_tv.topAnchor      constraintEqualToAnchor:self.view.topAnchor],
         [_tv.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor],
         [_tv.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
         [_tv.bottomAnchor   constraintEqualToAnchor:self.view.bottomAnchor],
     ]];
 
-    // Hook engine callback
     __weak typeof(self) ws = self;
     BLESpamEngine.shared.onPacketSent = ^(NSData *payload, NSUInteger total) {
         NSMutableString *hex = [NSMutableString string];
@@ -1046,7 +1146,7 @@ static UIView *card(void) {
             [hex appendFormat:@"%02X ", b[i]];
         }
         if (payload.length > 8) [hex appendString:@"…"];
-        NSString *entry = [NSString stringWithFormat:@"#%lu  %@", (unsigned long)total, hex];
+        NSString *entry = [NSString stringWithFormat:@"#%lu   %@", (unsigned long)total, hex];
         dispatch_async(dispatch_get_main_queue(), ^{
             [ws.logs insertObject:entry atIndex:0];
             if (ws.logs.count > 200) [ws.logs removeLastObject];
@@ -1061,25 +1161,61 @@ static UIView *card(void) {
     [_tv reloadData];
 }
 
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return _logs.count; }
-- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s { return @"Live Log"; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 2; }
+
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
+    if (s == 0) return 1;
+    return MAX((NSInteger)_logs.count, 1);
+}
+
+- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
+    return (s == 0) ? @"Session Summary" : @"Live Packet Log";
+}
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    if (ip.section == 0) {
+        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        cell.backgroundColor = CLR_CARD;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+
+        UILabel *titleLbl = label(@"Total Packets Sent", [UIFont systemFontOfSize:16 weight:UIFontWeightRegular], CLR_FG);
+        [_counterLabel removeFromSuperview];
+        [cell.contentView addSubview:titleLbl];
+        [cell.contentView addSubview:_counterLabel];
+
+        [NSLayoutConstraint activateConstraints:@[
+            [titleLbl.leadingAnchor       constraintEqualToAnchor:cell.contentView.leadingAnchor constant:16],
+            [titleLbl.topAnchor           constraintEqualToAnchor:cell.contentView.topAnchor constant:12],
+            [titleLbl.bottomAnchor        constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-12],
+            [_counterLabel.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-16],
+            [_counterLabel.centerYAnchor  constraintEqualToAnchor:titleLbl.centerYAnchor],
+        ]];
+        return cell;
+    }
+
     UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:@"log" forIndexPath:ip];
     cell.backgroundColor = CLR_CARD;
-    UIListContentConfiguration *cfg = [cell defaultContentConfiguration];
-    cfg.text = _logs[ip.row];
-    cfg.textProperties.font = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular];
-    cfg.textProperties.color = CLR_FG2;
-    cell.contentConfiguration = cfg;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
+
+    UIListContentConfiguration *cfg = [cell defaultContentConfiguration];
+    if (_logs.count == 0) {
+        cfg.text = @"No packets transmitted yet";
+        cfg.textProperties.font = [UIFont systemFontOfSize:14 weight:UIFontWeightRegular];
+        cfg.textProperties.color = CLR_FG2;
+    } else {
+        cfg.text = _logs[ip.row];
+        cfg.textProperties.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
+        cfg.textProperties.color = CLR_FG;
+    }
+    cfg.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(9, 16, 9, 16);
+    cell.contentConfiguration = cfg;
     return cell;
 }
 
 @end
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MARK: - Tab Bar Controller
+// MARK: - Tab Bar Controller (Classic Docked Blurred Bar, Pre-Liquid-Glass)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @interface MainTabBarController : UITabBarController
@@ -1090,56 +1226,74 @@ static UIView *card(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    // Classic tab bar — edge-to-edge, fully opaque blur
     UITabBar *bar = self.tabBar;
     bar.translucent = YES;
     bar.tintColor = CLR_ACCENT;
-    bar.unselectedItemTintColor = CLR_FG3;
+    bar.unselectedItemTintColor = CLR_FG2;
 
-    // Blur background
-    UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterialDark];
-    UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blur];
-    blurView.frame = bar.bounds;
-    blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    blurView.alpha = 0.92;
-    [bar insertSubview:blurView atIndex:0];
-
-    // Top separator line
-    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 0, UIScreen.mainScreen.bounds.size.width, .5)];
-    line.backgroundColor = [UIColor colorWithWhite:1 alpha:.15];
-    line.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    [bar addSubview:line];
-
-    // Appearance for iOS 15+
+    // Native system chrome blur with top hairline separator
     UITabBarAppearance *a = [[UITabBarAppearance alloc] init];
-    [a configureWithTransparentBackground];
-    a.backgroundColor = [UIColor colorWithRed:.11 green:.11 blue:.12 alpha:.88];
+    [a configureWithDefaultBackground];
+    a.backgroundEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterialDark];
+    a.backgroundColor = [UIColor colorWithRed:0.09 green:0.09 blue:0.10 alpha:0.82];
+    a.shadowColor = [UIColor colorWithWhite:1.0 alpha:0.14];
+
+    NSDictionary *normalAttrs = @{
+        NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightMedium],
+        NSForegroundColorAttributeName: CLR_FG2
+    };
+    NSDictionary *selectedAttrs = @{
+        NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightSemibold],
+        NSForegroundColorAttributeName: CLR_ACCENT
+    };
+
+    NSArray<UITabBarItemAppearance *> *layouts = @[
+        a.stackedLayoutAppearance,
+        a.inlineLayoutAppearance,
+        a.compactInlineLayoutAppearance
+    ];
+    for (UITabBarItemAppearance *item in layouts) {
+        item.normal.iconColor = CLR_FG2;
+        item.normal.titleTextAttributes = normalAttrs;
+        item.selected.iconColor = CLR_ACCENT;
+        item.selected.titleTextAttributes = selectedAttrs;
+    }
+
     bar.standardAppearance = a;
     bar.scrollEdgeAppearance = a;
 
-    // ViewControllers
+    // ViewControllers with compact blurred Navigation Bars
     UINavigationController * (^makeNav)(UIViewController *, NSString *, NSString *, NSString *) =
     ^UINavigationController *(UIViewController *vc, NSString *title, NSString *icon, NSString *selectedIcon) {
         UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
-        UIImage *img = [UIImage systemImageNamed:icon];
-        UIImage *sel = [UIImage systemImageNamed:selectedIcon ? selectedIcon : icon];
+        UIImageSymbolConfiguration *symCfg = [UIImageSymbolConfiguration configurationWithPointSize:18 weight:UIImageSymbolWeightMedium];
+        UIImage *img = [UIImage systemImageNamed:icon withConfiguration:symCfg];
+        UIImage *sel = [UIImage systemImageNamed:(selectedIcon ? selectedIcon : icon) withConfiguration:symCfg];
         nav.tabBarItem = [[UITabBarItem alloc] initWithTitle:title image:img selectedImage:sel];
+
         UINavigationBarAppearance *na = [[UINavigationBarAppearance alloc] init];
-        [na configureWithOpaqueBackground];
-        na.backgroundColor = CLR_BG;
-        na.titleTextAttributes = @{NSForegroundColorAttributeName: CLR_FG};
-        na.largeTitleTextAttributes = @{NSForegroundColorAttributeName: CLR_FG};
+        [na configureWithDefaultBackground];
+        na.backgroundEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterialDark];
+        na.backgroundColor = [UIColor colorWithRed:0.08 green:0.08 blue:0.09 alpha:0.80];
+        na.shadowColor = [UIColor colorWithWhite:1.0 alpha:0.12];
+        na.titleTextAttributes = @{
+            NSForegroundColorAttributeName: CLR_FG,
+            NSFontAttributeName: [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold]
+        };
+        nav.navigationBar.prefersLargeTitles = NO;
         nav.navigationBar.standardAppearance = na;
+        nav.navigationBar.compactAppearance = na;
         nav.navigationBar.scrollEdgeAppearance = na;
+        nav.navigationBar.translucent = YES;
         nav.navigationBar.tintColor = CLR_ACCENT;
         return nav;
     };
 
     self.viewControllers = @[
-        makeNav([PayloadsVC new],  @"Payloads", @"antenna.radiowaves.left.and.right", @"antenna.radiowaves.left.and.right.fill"),
-        makeNav([TimingVC new],    @"Timing",   @"timer",                             @"timer"),
-        makeNav([CustomVC new],    @"Custom",   @"wrench.and.screwdriver",            @"wrench.and.screwdriver.fill"),
-        makeNav([LogsVC new],      @"Logs",     @"list.bullet.rectangle",             @"list.bullet.rectangle.fill"),
+        makeNav([PayloadsVC new], @"Payloads", @"antenna.radiowaves.left.and.right", @"antenna.radiowaves.left.and.right"),
+        makeNav([TimingVC new],   @"Timing",   @"timer",                             @"timer"),
+        makeNav([CustomVC new],   @"Custom",   @"wrench.and.screwdriver",            @"wrench.and.screwdriver.fill"),
+        makeNav([LogsVC new],     @"Logs",     @"list.bullet.rectangle",             @"list.bullet.rectangle.fill"),
     ];
 
     // Engine error callback
@@ -1168,6 +1322,7 @@ static UIView *card(void) {
 - (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts {
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    self.window.tintColor = CLR_ACCENT;
     self.window.rootViewController = [MainTabBarController new];
     [self.window makeKeyAndVisible];
     return YES;

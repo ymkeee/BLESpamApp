@@ -1,4 +1,4 @@
-// StatsBar.swift — Live stats row shown while broadcasting
+// StatsBar.swift — Compact native telemetry row shown while broadcasting
 
 import SwiftUI
 
@@ -6,54 +6,40 @@ struct StatsBar: View {
     let packetsSent: Int
     let interval: Double
     let payloadName: String?
-    @State private var tick = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            statItem(
-                icon: "dot.radiowaves.left.and.right",
-                value: "\(packetsSent)",
-                label: "Packets",
-                accent: Color(hex: "#3A8EF6")
-            )
-            Divider().frame(height: 36).opacity(0.2)
-            statItem(
-                icon: "clock.fill",
-                value: intervalLabel,
-                label: "Interval",
-                accent: Color(hex: "#A855F7")
-            )
-            Divider().frame(height: 36).opacity(0.2)
-            statItem(
-                icon: "antenna.radiowaves.left.and.right",
-                value: payloadName ?? "–",
-                label: "Last Sent",
-                accent: Color(hex: "#22C55E")
-            )
+        HStack(spacing: 12) {
+            statColumn(label: "Sent", value: "\(packetsSent)")
+            Divider()
+                .frame(height: 28)
+            statColumn(label: "Interval", value: intervalLabel)
+            Divider()
+                .frame(height: 28)
+            statColumn(label: "Active Payload", value: payloadName ?? "—", monospaced: false)
         }
-        .padding(.vertical, 12)
-        .glassCard(cornerRadius: 16)
+        .padding(.vertical, 6)
     }
 
     private var intervalLabel: String {
-        let ms = Int(interval * 1000)
-        return "\(ms) ms"
+        "\(Int(interval * 1000)) ms"
     }
 
-    private func statItem(icon: String, value: String, label: String, accent: Color) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(accent)
+    private func statColumn(label: String, value: String, monospaced: Bool = true) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             Text(value)
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .font(
+                    monospaced
+                        ? .system(size: 14, weight: .semibold, design: .monospaced)
+                        : .system(size: 14, weight: .medium)
+                )
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(label)
-                .font(.system(size: 10, weight: .regular))
-                .foregroundStyle(.secondary)
+                .minimumScaleFactor(0.75)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

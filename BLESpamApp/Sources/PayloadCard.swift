@@ -1,4 +1,4 @@
-// PayloadCard.swift — Individual payload selection card
+// PayloadCard.swift — Native iOS grouped row for payload selection
 
 import SwiftUI
 
@@ -8,64 +8,48 @@ struct PayloadCard: View {
     let isBroadcasting: Bool
     let onTap: () -> Void
 
-    @State private var pressed = false
-
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 10) {
-                // Icon
+            HStack(spacing: 12) {
+                // Settings-style rounded icon badge
                 ZStack {
-                    Circle()
-                        .fill(payload.color.linearGradient)
-                        .frame(width: 52, height: 52)
-                        .shadow(color: payload.color.primary.opacity(0.5), radius: isSelected ? 12 : 4, y: 4)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(payload.color.primary)
+                        .frame(width: 30, height: 30)
 
                     Image(systemName: payload.icon)
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
                 }
-                .pulseEffect(active: isSelected && isBroadcasting, color: payload.color.primary)
 
-                // Name
-                Text(payload.name)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
+                // Title & metadata
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(payload.name)
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
 
-                // Category badge
-                Text(payload.category.rawValue)
-                    .font(.system(size: 10, weight: .medium))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(payload.color.primary.opacity(0.15))
-                    .foregroundStyle(payload.color.primary)
-                    .clipShape(Capsule())
+                    Text("\(payload.category.rawValue) · \(payload.bytes.count) B")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                if isBroadcasting && isSelected {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.warning)
+                }
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(isSelected ? AppTheme.accent : Color(uiColor: .tertiaryLabel))
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .padding(.horizontal, 8)
-            .glassCard(cornerRadius: 18)
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(
-                        isSelected
-                            ? payload.color.linearGradient
-                            : LinearGradient(colors: [.clear], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 2
-                    )
-            )
-            .scaleEffect(pressed ? 0.95 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: pressed)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        ._onButtonGesture(
-            pressing: { pressing in
-                withAnimation { pressed = pressing }
-            },
-            perform: {}
-        )
     }
 }
