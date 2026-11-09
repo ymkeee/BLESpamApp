@@ -48,6 +48,8 @@ jobs:
             -framework UIKit \
             -framework CoreBluetooth \
             -framework CoreFoundation \
+            -framework CoreGraphics \
+            -framework QuartzCore \
             -o /tmp/BLESpam \
             src/main.m
           file /tmp/BLESpam
