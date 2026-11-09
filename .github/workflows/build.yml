@@ -38,7 +38,7 @@ jobs:
           cp -r iPhoneOS16.5.sdk /opt/sdks/
           echo "SDK ready: $(ls /opt/sdks/)"
 
-      - name: Compile arm64 binary
+      - name: Compile binary (arm64)
         run: |
           clang \
             -target arm64-apple-ios15.0 \
@@ -48,25 +48,8 @@ jobs:
             -framework UIKit \
             -framework CoreBluetooth \
             -framework CoreFoundation \
-            -o /tmp/BLESpam_arm64 \
+            -o /tmp/BLESpam \
             src/main.m
-
-      - name: Compile arm64e binary
-        run: |
-          clang \
-            -target arm64e-apple-ios15.0 \
-            -isysroot /opt/sdks/iPhoneOS16.5.sdk \
-            -fobjc-arc \
-            -fuse-ld=lld \
-            -framework UIKit \
-            -framework CoreBluetooth \
-            -framework CoreFoundation \
-            -o /tmp/BLESpam_arm64e \
-            src/main.m
-
-      - name: Create fat binary
-        run: |
-          lipo -create /tmp/BLESpam_arm64 /tmp/BLESpam_arm64e -output /tmp/BLESpam
           file /tmp/BLESpam
 
       - name: Assemble .app bundle
