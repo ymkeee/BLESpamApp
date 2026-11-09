@@ -27,12 +27,14 @@ jobs:
 
       - name: Download iOS 16.5 SDK
         run: |
-          curl -fsSL --retry 3 \
-            "https://github.com/theos/sdks/releases/download/stable/iPhoneOS16.5.sdk.tar.xz" \
-            -o /tmp/sdk.tar.xz
           mkdir -p /opt/sdks
-          tar -xJf /tmp/sdk.tar.xz -C /opt/sdks/
-          echo "SDK: $(ls /opt/sdks/)"
+          # Clone only the 16.5 SDK folder (sparse checkout — much faster than full clone)
+          git clone --depth=1 --filter=blob:none --sparse \
+            https://github.com/theos/sdks.git /tmp/theos-sdks
+          cd /tmp/theos-sdks
+          git sparse-checkout set iPhoneOS16.5.sdk
+          cp -r iPhoneOS16.5.sdk /opt/sdks/
+          echo "SDK ready: $(ls /opt/sdks/)"
 
       - name: Compile arm64 binary
         run: |
